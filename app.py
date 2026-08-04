@@ -25,7 +25,7 @@ st.set_page_config(page_title="Kawakib SQM Analyzer", page_icon="🌌", layout="
 
 st.title("🌌 KAWAKIB INSTITUTE: Otonom SQM & Fajar Analyzer")
 st.markdown("""
-Aplikasi web ini menggunakan algoritma **SIGMAG-STAB** dan pemodelan awan dinamis Cavazzani untuk mengekstrak titik belok fajar sadiq, menyaring gangguan bulan, dan menganalisis tutupan awan dari data instrumen Sky Quality Meter (SQM).
+Aplikasi web ini menggunakan algoritma **SIGMAG-STAB** atau **SIGMOID** dan pemodelan awan dinamis Cavazzani untuk mengekstrak titik belok fajar sadiq, menyaring gangguan bulan, dan menganalisis tutupan awan dari data instrumen Sky Quality Meter (SQM).
 """)
 
 # =====================================================================
