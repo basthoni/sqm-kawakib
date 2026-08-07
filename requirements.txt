@@ -4,3 +4,5 @@ numpy
 scipy
 matplotlib
 ephem
+gspread
+google-auth
