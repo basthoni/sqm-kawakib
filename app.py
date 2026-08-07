@@ -213,7 +213,7 @@ with st.sidebar:
     st.divider()
     st.markdown("### 📂 Uji Coba Aplikasi")
     # Ganti URL ini dengan link Google Drive Anda yang sebenarnya
-    st.markdown("[🔗 Unduh Sample Data (.zip)](https://drive.google.com/drive/u/0/folders/CONTOH_LINK_DRIVE_ANDA)")
+    st.markdown("[🔗 Unduh Sample Data](https://drive.google.com/drive/folders/1KHg8dRtkt9KrdDFZ8esbiuHQtKJvP2AN?usp=sharing)")
 
 # Membuat Tab UI
 tab_analisis, tab_histori = st.tabs(["🚀 Analisis Baru", "📜 Histori (Segera Hadir)"])
