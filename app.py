@@ -267,7 +267,7 @@ with st.sidebar:
     
     st.divider()
     st.markdown("### 📂 Sample Data Uji Coba")
-    st.markdown(f"[🔗 Unduh Sample Data (.zip)]({SAMPLE_DATA_DRIVE_URL})")
+    st.markdown(f"[🔗 Unduh Sample Data]({SAMPLE_DATA_DRIVE_URL})")
 
 # Tab Antarmuka Utama
 tab_analisis, tab_histori, tab_algoritma = st.tabs(["🚀 Analisis Baru", "📜 Histori Cloud (Google Sheets)", "📖 Penjelasan Algoritma"])
