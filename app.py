@@ -9,6 +9,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.signal import savgol_filter
 from scipy.optimize import curve_fit
+import io
+import base64
+import requests
 
 # Pastikan ephem terinstal
 try:
@@ -18,11 +21,9 @@ except ImportError:
     subprocess.check_call([sys.executable, "-m", "pip", "install", "ephem"])
     import ephem
 
-# Modul untuk Google Sheets & Google Drive
+# Modul untuk Google Sheets
 import gspread
 from google.oauth2.service_account import Credentials
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
 
 # =====================================================================
 # KONFIGURASI HALAMAN WEB & LINK PERMANEN
@@ -32,7 +33,7 @@ st.set_page_config(page_title="Kawakib SQM Analyzer", page_icon="🌌", layout="
 # ⚠️ GANTI DENGAN MILIK ANDA:
 GSHEETS_PERMANEN_URL = "https://docs.google.com/spreadsheets/d/1E4RpTfcPeQorW3r9cjpZ5cp31dpa7N_oXRZksRWdxG4/edit?gid=0#gid=0"
 SAMPLE_DATA_DRIVE_URL = "https://drive.google.com/drive/folders/1KHg8dRtkt9KrdDFZ8esbiuHQtKJvP2AN?usp=drive_link"
-GDRIVE_FOLDER_ID = "1_6K3xZtysPxrgZgRNYx4QI6CC2NzwZOE" 
+IMGBB_API_KEY = "1d64d5b94873397e8ddd06386957f9f7"
 
 if 'history_plot' not in st.session_state:
     st.session_state.history_plot = []
@@ -40,53 +41,39 @@ if 'history_plot' not in st.session_state:
 st.title("🌌 KAWAKIB INSTITUTE: Otonom SQM & Fajar Analyzer")
 st.markdown("""
 Aplikasi web ini menggunakan algoritma **SIGMAG-STAB** atau pemodelan **SIGMOID** dinamis untuk mengekstrak titik belok fajar sadiq. 
-Data numerik tersinkronisasi ke **Google Sheets**, dan arsip grafik tersimpan otomatis di **Google Drive**.
+Data numerik tersinkronisasi ke **Google Sheets**, dan arsip grafik di-*hosting* otomatis melalui **ImgBB**.
 """)
 
 # =====================================================================
-# KONEKSI GOOGLE CLOUD (SHEETS & DRIVE)
+# KONEKSI CLOUD (SHEETS & IMGBB)
 # =====================================================================
-def get_gcp_credentials():
-    scopes = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
+def get_gsheets_client():
     try:
-        return Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
+        scopes = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
+        creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
+        return gspread.authorize(creds)
     except:
         return None
 
-def get_gsheets_client():
-    creds = get_gcp_credentials()
-    return gspread.authorize(creds) if creds else None
-
-def get_gdrive_client():
-    creds = get_gcp_credentials()
-    return build('drive', 'v3', credentials=creds) if creds else None
-
-def upload_plot_to_drive(fig, filename):
-    """Menyimpan matplotlib figure sbg PNG, upload ke Drive, kembalikan URL."""
-    drive_service = get_gdrive_client()
-    if not drive_service:
-        return "Gagal: Kredensial tidak valid"
-        
+def upload_plot_to_imgbb(fig):
+    """Mengubah plot ke base64 dan mengunggahnya ke ImgBB"""
     try:
-        # Simpan grafik ke file sementara
-        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
-            fig.savefig(tmp.name, format="png", bbox_inches="tight", dpi=100)
-            tmp_path = tmp.name
-            
-        file_metadata = {'name': filename, 'parents': [GDRIVE_FOLDER_ID]}
-        media = MediaFileUpload(tmp_path, mimetype='image/png')
+        buf = io.BytesIO()
+        fig.savefig(buf, format='png', bbox_inches='tight', dpi=100)
+        buf.seek(0)
+        img_base64 = base64.b64encode(buf.read())
         
-        # Upload ke GDrive
-        file = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-        file_id = file.get('id')
-        
-        # Bersihkan file lokal
-        os.remove(tmp_path)
-        
-        # Format URL khusus agar bisa dibaca langsung oleh Streamlit image viewer
-        return f"https://drive.google.com/uc?id={file_id}"
+        url = "https://api.imgbb.com/1/upload"
+        payload = {
+            "key": IMGBB_API_KEY,
+            "image": img_base64
+        }
+        res = requests.post(url, payload)
+        if res.status_code == 200:
+            return res.json()['data']['url']
+        return ""
     except Exception as e:
-        return f"Gagal Upload: {str(e)}"
+        return ""
 
 def save_to_google_sheets(data_dict):
     client = get_gsheets_client()
@@ -274,7 +261,7 @@ with st.sidebar:
     st.markdown("### 📂 Sample Data Uji Coba")
     st.markdown(f"[🔗 Unduh Sample Data]({SAMPLE_DATA_DRIVE_URL})")
 
-tab_analisis, tab_histori, tab_algoritma = st.tabs(["🚀 Analisis Baru", "☁️ Histori Cloud (Sheets & Drive)", "📖 Penjelasan Algoritma"])
+tab_analisis, tab_histori, tab_algoritma = st.tabs(["🚀 Analisis Baru", "☁️ Histori Cloud (Sheets & ImgBB)", "📖 Penjelasan Algoritma"])
 
 # =====================================================================
 # TAB 1: PROSES ANALISIS & SIMPAN KE CLOUD
@@ -350,10 +337,9 @@ with tab_analisis:
                             ax.text(0.02, baseline_mpsas - 1.2, info_text, transform=ax.get_yaxis_transform(), fontsize=9, verticalalignment='bottom', bbox=props, family='monospace')
                             ax.legend(loc="upper right")
                             
-                            # --- UPLOAD PLOT KE GDRIVE ---
-                            filename_plot = f"Plot_{site}_{date_str}_{method}.png".replace(" ", "_")
-                            status_text.text(f"Mengunggah grafik ke Google Drive: {filename_plot}...")
-                            plot_url = upload_plot_to_drive(fig, filename_plot)
+                            # --- UPLOAD PLOT KE IMGBB ---
+                            status_text.text(f"Mengunggah grafik ke server ImgBB...")
+                            plot_url = upload_plot_to_imgbb(fig)
                             
                             # --- SIMPAN DATA KE GSHEETS ---
                             rekap_data = {
@@ -367,9 +353,8 @@ with tab_analisis:
                             }
                             save_to_google_sheets(rekap_data)
                             
-                            # Tampilkan di Streamlit langsung
                             st.pyplot(fig)
-                            plt.close(fig)
+                            st.session_state.history_plot.append((f"{site} - {date_str} [{method}]", fig))
                             
                         except Exception as e:
                             st.error(f"Gagal memproses {os.path.basename(path)}: {str(e)}")
@@ -377,14 +362,14 @@ with tab_analisis:
                         progress_bar.progress((idx + 1) / len(file_paths))
                 
                     status_text.text("")
-                    st.success("🎉 Analisis selesai! Data numerik tersimpan di Sheets, arsip gambar di Google Drive.")
+                    st.success("🎉 Analisis selesai! Data numerik tersimpan di Sheets, dan arsip gambar di ImgBB.")
 
 # =====================================================================
 # TAB 2: HISTORI CLOUD
 # =====================================================================
 with tab_histori:
     st.header("☁️ Basis Data Cloud Interaktif")
-    st.markdown("Data rekapitulasi ditarik dari **Google Sheets**, sementara grafik gambar dirender dari **Google Drive**.")
+    st.markdown("Data rekapitulasi ditarik dari **Google Sheets**, sementara grafik gambar dirender dari **ImgBB**.")
     
     if st.button("🔄 Muat Ulang Data dari Cloud"):
         st.rerun()
@@ -394,7 +379,6 @@ with tab_histori:
     if df_cloud.empty:
         st.info("Belum ada data di Google Sheets.")
     else:
-        # Filter dataframe untuk tidak menampilkan URL panjang di tabel utama
         df_display = df_cloud.drop(columns=["Link_Grafik"], errors="ignore")
         st.dataframe(df_display, use_container_width=True)
         
@@ -403,13 +387,12 @@ with tab_histori:
         st.divider()
         st.subheader("📈 Galeri Arsip Grafik")
         if "Link_Grafik" not in df_cloud.columns:
-            st.info("Kolom 'Link_Grafik' belum tersedia di data Anda yang terdahulu.")
+            st.info("Kolom 'Link_Grafik' belum tersedia.")
         else:
-            # Menampilkan gambar dari URL GDrive secara terstruktur menggunakan grid
             cols = st.columns(2)
             for idx, row in df_cloud.iterrows():
                 link = row.get("Link_Grafik", "")
-                if link and "drive.google.com" in str(link):
+                if link and "http" in str(link):
                     with cols[idx % 2]:
                         with st.expander(f"{row['Tanggal']} | {row['Lokasi']}"):
                             st.image(link, use_container_width=True)
