@@ -18,18 +18,63 @@ except ImportError:
     subprocess.check_call([sys.executable, "-m", "pip", "install", "ephem"])
     import ephem
 
+# Modul untuk Google Sheets
+import gspread
+from google.oauth2.service_account import Credentials
+
 # =====================================================================
-# KONFIGURASI HALAMAN WEB
+# KONFIGURASI HALAMAN WEB & SESSION STATE
 # =====================================================================
 st.set_page_config(page_title="Kawakib SQM Analyzer", page_icon="🌌", layout="wide")
 
+if 'history_rekap' not in st.session_state:
+    st.session_state.history_rekap = []
+if 'history_plot' not in st.session_state:
+    st.session_state.history_plot = []
+
 st.title("🌌 KAWAKIB INSTITUTE: Otonom SQM & Fajar Analyzer")
 st.markdown("""
-Aplikasi web ini menggunakan algoritma **SIGMAG-STAB** atau pemodelan **SIGMOID** dinamis untuk mengekstrak titik belok fajar sadiq, menyaring gangguan bulan, dan menganalisis tutupan awan dari data instrumen Sky Quality Meter (SQM).
+Aplikasi web ini menggunakan algoritma **SIGMAG-STAB** atau pemodelan **SIGMOID** dinamis untuk mengekstrak titik belok fajar sadiq, menyaring gangguan bulan, dan menganalisis tutupan awan. 
+Data secara otomatis disinkronisasi ke Google Sheets untuk analisis kolaboratif.
 """)
 
 # =====================================================================
-# SEMUA FUNGSI MATEMATIKA & ASTRONOMI (DARI VERSI COLAB)
+# KONEKSI GOOGLE SHEETS (CLOUD SYNC)
+# =====================================================================
+def get_gsheets_client():
+    """Mengambil credentials dari Streamlit Secrets untuk GSheets."""
+    try:
+        # Mengharuskan ada st.secrets["gcp_service_account"] yang berisi JSON keys
+        scopes = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
+        creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
+        client = gspread.authorize(creds)
+        return client
+    except Exception as e:
+        return None
+
+def save_to_google_sheets(data_dict, sheet_url):
+    """Menyimpan 1 baris data ke Google Sheets."""
+    client = get_gsheets_client()
+    if client is None:
+        return False, "Kredensial Google Sheets belum dikonfigurasi di Streamlit Secrets."
+    
+    try:
+        sheet = client.open_by_url(sheet_url).sheet1
+        
+        # Cek apakah header sudah ada, jika kosong, buat header
+        if not sheet.get_all_values():
+            header = list(data_dict.keys())
+            sheet.append_row(header)
+            
+        # Susun data sesuai urutan header
+        row_data = [str(data_dict.get(key, "")) for key in data_dict.keys()]
+        sheet.append_row(row_data)
+        return True, "Berhasil sinkronisasi ke cloud."
+    except Exception as e:
+        return False, str(e)
+
+# =====================================================================
+# FUNGSI MATEMATIKA & ASTRONOMI 
 # =====================================================================
 def read_header_and_find_data_start(path, max_header_lines=80):
     header, data_start = list(), None
@@ -202,22 +247,30 @@ def analyze_sigmoid(am):
         return None, None
 
 # =====================================================================
-# UI & PROSES UNGGAH FILE STREAMLIT
+# UI KONTROL STREAMLIT
 # =====================================================================
 
 with st.sidebar:
     st.header("⚙️ Pengaturan")
     method = st.selectbox("Metode Analisis", ["SIGMAG-STAB", "SIGMOID"])
-    st.info("Pilih file mentah SQM (.dat) atau file .zip yang berisi banyak file .dat sekaligus.")
+    st.info("Unggah file mentah SQM (.dat) atau file .zip yang berisi banyak file data sekaligus.")
     
     st.divider()
-    st.markdown("### 📂 Uji Coba Aplikasi")
-    # Ganti URL ini dengan link Google Drive Anda yang sebenarnya
-    st.markdown("[🔗 Unduh Sample Data](https://drive.google.com/drive/folders/1KHg8dRtkt9KrdDFZ8esbiuHQtKJvP2AN?usp=sharing)")
+    st.markdown("### ☁️ Sinkronisasi GSheets")
+    gsheets_url = st.text_input("URL Google Sheets (Opsional)", placeholder="https://docs.google.com/spreadsheets/d/...")
+    
+    st.divider()
+    if st.button("🗑️ Hapus Histori Sesi Ini"):
+        st.session_state.history_rekap = []
+        st.session_state.history_plot = []
+        st.rerun()
 
 # Membuat Tab UI
-tab_analisis, tab_histori = st.tabs(["🚀 Analisis Baru", "📜 Histori (Segera Hadir)"])
+tab_analisis, tab_histori, tab_algoritma = st.tabs(["🚀 Analisis Baru", "📜 Histori & Sinkronisasi", "📖 Penjelasan Algoritma"])
 
+# =====================================================================
+# TAB 1: PROSES ANALISIS BATCH
+# =====================================================================
 with tab_analisis:
     uploaded_files = st.file_uploader("Unggah File Data", accept_multiple_files=True, type=['dat', 'txt', 'zip'])
 
@@ -226,7 +279,7 @@ with tab_analisis:
             with tempfile.TemporaryDirectory() as temp_dir:
                 file_paths = list()
                 
-                # Ekstraksi File
+                # Ekstrak & Kumpulkan File
                 for uploaded_file in uploaded_files:
                     file_path = os.path.join(temp_dir, uploaded_file.name)
                     with open(file_path, "wb") as f:
@@ -245,11 +298,12 @@ with tab_analisis:
                 if not file_paths:
                     st.error("❌ Tidak ada file .dat yang ditemukan.")
                 else:
-                    st.success(f"✅ Ditemukan {len(file_paths)} file untuk diproses. Memulai komputasi...")
-                    results_list = list()
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+                    total_files = len(file_paths)
                     
-                    # --- PROSES INTI BATCH PROCESSING ---
-                    for path in file_paths:
+                    for idx, path in enumerate(file_paths):
+                        status_text.text(f"Memproses file {idx+1} dari {total_files}: {os.path.basename(path)}")
                         try:
                             am, site, lat, lon, utc_offset, date_str = load_sqm_data(path)
                             if am.empty: continue
@@ -257,7 +311,6 @@ with tab_analisis:
                             am, is_corrected = apply_moonlight_correction(am, lat, lon, utc_offset)
                             bin_deg, n_consec = get_dynamic_params(am)
 
-                            # LOGIKA PEMILIHAN METODE
                             if method == "SIGMAG-STAB":
                                 onset_alt, onset_msas = analyze_sigmag(am, bin_deg, n_consec)
                             else:
@@ -268,16 +321,24 @@ with tab_analisis:
                             baseline_mpsas = base_series.median() if not base_series.empty else am["mpsas_corrected"].max()
                             lp_category, expected_alt = categorize_light_pollution(baseline_mpsas)
                             
-                            results_list.append({
-                                "Tanggal": date_str, "Lokasi": site,
-                                "Metode": method,
-                                "Bortle/ALAN": lp_category.split("(")[-1].replace(")",""),
-                                "Awan_%": round(cloud_pct, 1), "Bulan": "Aktif" if is_corrected else "-",
-                                "Fajar_Alt": round(onset_alt, 2) if onset_alt is not None else None,
-                                "Fajar_MSAS": round(onset_msas, 2) if onset_msas is not None else None
-                            })
+                            # 1. Simpan Rekap ke Memori Sesi (Dictionary)
+                            rekap_data = {
+                                "Tanggal": date_str, "Lokasi": site, "Metode": method,
+                                "Bortle": lp_category.split("(")[-1].replace(")",""),
+                                "Awan_%": round(cloud_pct, 1), "Koreksi_Bulan": "Aktif" if is_corrected else "Pasif",
+                                "Garis_Dasar": round(baseline_mpsas, 2),
+                                "Fajar_Alt": round(onset_alt, 2) if onset_alt is not None else "",
+                                "Fajar_MSAS": round(onset_msas, 2) if onset_msas is not None else ""
+                            }
+                            st.session_state.history_rekap.append(rekap_data)
 
-                            # --- PLOT KE WEB STREAMLIT ---
+                            # 2. Sinkronisasi Permanen ke Google Sheets (Jika URL GSheets diisi)
+                            if gsheets_url:
+                                is_saved, msg = save_to_google_sheets(rekap_data, gsheets_url)
+                                if not is_saved:
+                                    st.warning(f"Gagal simpan ke Sheets: {msg}")
+                                    
+                            # 3. Visualisasi Grafik
                             fig, ax = plt.subplots(figsize=(10, 5))
                             ax.plot(am["sun_alt"], am["mpsas_corrected"], color="black", alpha=0.7, label="SQM Terkoreksi")
                             if is_corrected:
@@ -298,39 +359,90 @@ with tab_analisis:
                             ax.set_title(f"{site} | {date_str} [{method}]")
                             ax.grid(True, linestyle=":", alpha=0.7)
                             
-                            onset_str = f"{onset_alt:.2f}°" if onset_alt is not None else "Gagal Terdeteksi"
+                            onset_str = f"{onset_alt:.2f}°" if onset_alt is not None else "Gagal"
                             info_text = (
-                                f"Kategori Polusi : {lp_category}\n"
-                                f"Garis Dasar     : {baseline_mpsas:.2f} Mpsas\n"
-                                f"Koreksi Bulan   : {'Aktif' if is_corrected else 'Tidak Ada'}\n"
-                                f"Tutupan Awan    : {cloud_pct:.1f}%\n"
-                                f"Titik Aktual    : {onset_str}"
+                                f"Garis Dasar : {baseline_mpsas:.2f} Mpsas\n"
+                                f"Awan / Bulan: {cloud_pct:.1f}% / {'Aktif' if is_corrected else 'Pasif'}\n"
+                                f"Titik Fajar : {onset_str}"
                             )
                             props = dict(boxstyle='round', facecolor='whitesmoke', alpha=0.9, edgecolor='gray')
-                            y_pos_dinamis = baseline_mpsas - 1.2 
-                            ax.text(0.02, y_pos_dinamis, info_text, transform=ax.get_yaxis_transform(), fontsize=9,
-                                    verticalalignment='bottom', bbox=props, family='monospace')
-                            
+                            ax.text(0.02, baseline_mpsas - 1.2, info_text, transform=ax.get_yaxis_transform(), 
+                                    fontsize=9, verticalalignment='bottom', bbox=props, family='monospace')
                             ax.legend(loc="upper right")
+                            
                             st.pyplot(fig)
-                            plt.close(fig)
-
+                            st.session_state.history_plot.append((f"{site} - {date_str} [{method}]", fig))
+                            
                         except Exception as e:
                             st.error(f"Gagal memproses {os.path.basename(path)}: {str(e)}")
-                
-                    # --- TABEL REKAPITULASI ---
-                    if results_list:
-                        st.success("🎉 Analisis Selesai! Berikut adalah data rekapitulasinya:")
-                        df_rekap = pd.DataFrame(results_list)
-                        st.dataframe(df_rekap)
                         
-                        csv = df_rekap.to_csv(index=False).encode('utf-8')
-                        st.download_button(
-                            label="⬇️ Unduh Rekap CSV",
-                            data=csv,
-                            file_name=f'Rekap_SQM_{method}.csv',
-                            mime='text/csv',
-                        )
+                        progress_bar.progress((idx + 1) / total_files)
+                
+                    status_text.text("")
+                    st.success("✅ Seluruh data berhasil diproses! Hasilnya telah tersimpan di tab Histori & Sinkronisasi.")
 
+# =====================================================================
+# TAB 2: HISTORI & SINKRONISASI
+# =====================================================================
 with tab_histori:
-    st.info("Ruang ini telah disiapkan untuk menampilkan log histori pengamatan bersama. Membutuhkan integrasi database/Google Sheets untuk menyimpan data sesi sebelumnya.")
+    st.header("📜 Histori Analisis (Sesi Ini)")
+    st.markdown("Data dan grafik di bawah ini merupakan akumulasi dari pengunggahan selama tab browser ini belum ditutup.")
+    
+    if not st.session_state.history_rekap:
+        st.info("Belum ada data histori. Silakan jalankan analisis di tab 'Analisis Baru' terlebih dahulu.")
+    else:
+        df_histori = pd.DataFrame(st.session_state.history_rekap)
+        st.dataframe(df_histori, use_container_width=True)
+        
+        csv_histori = df_histori.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="⬇️ Unduh Seluruh Rekap (CSV)",
+            data=csv_histori,
+            file_name='Kawakib_Histori_SQM.csv',
+            mime='text/csv',
+        )
+        
+        st.divider()
+        st.subheader("📈 Arsip Grafik")
+        for title, figure in st.session_state.history_plot:
+            with st.expander(f"Lihat Grafik: {title}"):
+                st.pyplot(figure)
+
+# =====================================================================
+# TAB 3: PENJELASAN ALGORITMA
+# =====================================================================
+with tab_algoritma:
+    st.header("📖 Landasan Algoritma Ekstraksi Fajar")
+    st.markdown("Aplikasi ini beroperasi menggunakan dua pendekatan matematis utama untuk menentukan titik belok (onset) fajar sadiq dari kurva penurunan kecerlangan langit malam.")
+    
+    st.subheader("1. Metode SIGMAG-STAB")
+    st.markdown("""
+    Metode ini bekerja dengan menganalisis laju perubahan (gradien) dari kurva kecerlangan langit terhadap perubahan ketinggian matahari. 
+    
+    *   **Proses Smoothing**: Data disaring menggunakan filter Savitzky-Golay untuk mereduksi *noise*.
+    *   **Ambang Batas Dinamis**: Titik fajar diekstrak saat gradien jatuh melebihi ambang batas statistik dinamis:
+    """)
+    st.latex(r"T = \mu - (k \cdot \sigma)")
+    st.markdown("""
+    Di mana:
+    *   $\mu$ adalah rata-rata gradien saat malam gelap total (Matahari $<-20^\circ$).
+    *   $\sigma$ adalah penyimpangan absolut median (*Median Absolute Deviation*) gradien.
+    *   $k$ adalah faktor pengali adaptif ($1.0 \leq k \leq 1.5$).
+    """)
+
+    st.divider()
+
+    st.subheader("2. Metode SIGMOID")
+    st.markdown("Alih-alih mencari turunan, metode ini memodelkan keseluruhan kurva penurunan kecerlangan menggunakan **Fungsi Logistik (Sigmoid)** melalui teknik *non-linear least squares fitting*.")
+    st.latex(r"y = \frac{L}{1 + e^{-k(x - x_0)}} + b")
+    st.markdown("""
+    Di mana:
+    *   $y$ = Kecerlangan langit (Mpsas)
+    *   $x$ = Ketinggian matahari (Derajat)
+    *   $L$ = Amplitudo kurva
+    *   $k$ = Kelandaian kurva saat fajar
+    *   $x_0$ = Titik infleksi (tengah transisi fajar)
+    *   $b$ = Garis dasar kecerlangan malam (*baseline*)
+    
+    Awal fajar (onset) dikunci pada titik di mana model kurva pertama kali menyimpang sebesar 0.15 Mpsas dari asimtot garis dasar teoritis ($b$).
+    """)
