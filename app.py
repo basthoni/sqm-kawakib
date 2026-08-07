@@ -23,28 +23,30 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 # =====================================================================
-# KONFIGURASI HALAMAN WEB & SESSION STATE
+# KONFIGURASI HALAMAN WEB & LINK PERMANEN
 # =====================================================================
 st.set_page_config(page_title="Kawakib SQM Analyzer", page_icon="🌌", layout="wide")
 
-if 'history_rekap' not in st.session_state:
-    st.session_state.history_rekap = []
+# Masukkan link Google Sheets permanen Anda di sini
+GSHEETS_PERMANEN_URL = "https://docs.google.com/spreadsheets/d/1E4RpTfcPeQorW3r9cjpZ5cp31dpa7N_oXRZksRWdxG4/edit?gid=0#gid=0"
+
+# Masukkan link sample data Google Drive Anda di sini
+SAMPLE_DATA_DRIVE_URL = "https://drive.google.com/drive/folders/1KHg8dRtkt9KrdDFZ8esbiuHQtKJvP2AN?usp=drive_link"
+
 if 'history_plot' not in st.session_state:
     st.session_state.history_plot = []
 
 st.title("🌌 KAWAKIB INSTITUTE: Otonom SQM & Fajar Analyzer")
 st.markdown("""
 Aplikasi web ini menggunakan algoritma **SIGMAG-STAB** atau pemodelan **SIGMOID** dinamis untuk mengekstrak titik belok fajar sadiq, menyaring gangguan bulan, dan menganalisis tutupan awan. 
-Data secara otomatis disinkronisasi ke Google Sheets untuk analisis kolaboratif.
+Data hasil analisis tersinkronisasi secara otomatis ke basis data cloud Google Sheets.
 """)
 
 # =====================================================================
-# KONEKSI GOOGLE SHEETS (CLOUD SYNC)
+# FUNGSI KONEKSI & OPERASI GOOGLE SHEETS
 # =====================================================================
 def get_gsheets_client():
-    """Mengambil credentials dari Streamlit Secrets untuk GSheets."""
     try:
-        # Mengharuskan ada st.secrets["gcp_service_account"] yang berisi JSON keys
         scopes = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
         creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
         client = gspread.authorize(creds)
@@ -52,29 +54,38 @@ def get_gsheets_client():
     except Exception as e:
         return None
 
-def save_to_google_sheets(data_dict, sheet_url):
-    """Menyimpan 1 baris data ke Google Sheets."""
+def save_to_google_sheets(data_dict):
     client = get_gsheets_client()
     if client is None:
-        return False, "Kredensial Google Sheets belum dikonfigurasi di Streamlit Secrets."
-    
+        return False, "Kredensial GSheets belum diatur di Streamlit Secrets."
     try:
-        sheet = client.open_by_url(sheet_url).sheet1
+        sheet = client.open_by_url(GSHEETS_PERMANEN_URL).sheet1
+        existing_data = sheet.get_all_values()
         
-        # Cek apakah header sudah ada, jika kosong, buat header
-        if not sheet.get_all_values():
+        # Jika sheet kosong, buat header terlebih dahulu
+        if not existing_data:
             header = list(data_dict.keys())
             sheet.append_row(header)
             
-        # Susun data sesuai urutan header
         row_data = [str(data_dict.get(key, "")) for key in data_dict.keys()]
         sheet.append_row(row_data)
-        return True, "Berhasil sinkronisasi ke cloud."
+        return True, "Berhasil"
     except Exception as e:
         return False, str(e)
 
+def load_data_from_google_sheets():
+    client = get_gsheets_client()
+    if client is None:
+        return pd.DataFrame()
+    try:
+        sheet = client.open_by_url(GSHEETS_PERMANEN_URL).sheet1
+        data = sheet.get_all_records()
+        return pd.DataFrame(data)
+    except Exception as e:
+        return pd.DataFrame()
+
 # =====================================================================
-# FUNGSI MATEMATIKA & ASTRONOMI 
+# FUNGSI MATEMATIKA & ASTRONOMI
 # =====================================================================
 def read_header_and_find_data_start(path, max_header_lines=80):
     header, data_start = list(), None
@@ -247,39 +258,31 @@ def analyze_sigmoid(am):
         return None, None
 
 # =====================================================================
-# UI KONTROL STREAMLIT
+# UI KONTROL & SIDEBAR
 # =====================================================================
-
 with st.sidebar:
     st.header("⚙️ Pengaturan")
     method = st.selectbox("Metode Analisis", ["SIGMAG-STAB", "SIGMOID"])
-    st.info("Unggah file mentah SQM (.dat) atau file .zip yang berisi banyak file data sekaligus.")
+    st.info("Unggah file mentah SQM (.dat) atau arsip .zip untuk analisis batch.")
     
     st.divider()
-    st.markdown("### ☁️ Sinkronisasi GSheets")
-    gsheets_url = st.text_input("URL Google Sheets (Opsional)", placeholder="https://docs.google.com/spreadsheets/d/...")
-    
-    st.divider()
-    if st.button("🗑️ Hapus Histori Sesi Ini"):
-        st.session_state.history_rekap = []
-        st.session_state.history_plot = []
-        st.rerun()
+    st.markdown("### 📂 Sample Data Uji Coba")
+    st.markdown(f"[🔗 Unduh Sample Data (.zip)]({SAMPLE_DATA_DRIVE_URL})")
 
-# Membuat Tab UI
-tab_analisis, tab_histori, tab_algoritma = st.tabs(["🚀 Analisis Baru", "📜 Histori & Sinkronisasi", "📖 Penjelasan Algoritma"])
+# Tab Antarmuka Utama
+tab_analisis, tab_histori, tab_algoritma = st.tabs(["🚀 Analisis Baru", "📜 Histori Cloud (Google Sheets)", "📖 Penjelasan Algoritma"])
 
 # =====================================================================
-# TAB 1: PROSES ANALISIS BATCH
+# TAB 1: PROSES ANALISIS & SIMPAN KE CLOUD
 # =====================================================================
 with tab_analisis:
-    uploaded_files = st.file_uploader("Unggah File Data", accept_multiple_files=True, type=['dat', 'txt', 'zip'])
+    uploaded_files = st.file_uploader("Unggah File Data SQM", accept_multiple_files=True, type=['dat', 'txt', 'zip'])
 
     if uploaded_files:
         if st.button("Jalankan Analisis 🚀"):
             with tempfile.TemporaryDirectory() as temp_dir:
                 file_paths = list()
                 
-                # Ekstrak & Kumpulkan File
                 for uploaded_file in uploaded_files:
                     file_path = os.path.join(temp_dir, uploaded_file.name)
                     with open(file_path, "wb") as f:
@@ -321,7 +324,6 @@ with tab_analisis:
                             baseline_mpsas = base_series.median() if not base_series.empty else am["mpsas_corrected"].max()
                             lp_category, expected_alt = categorize_light_pollution(baseline_mpsas)
                             
-                            # 1. Simpan Rekap ke Memori Sesi (Dictionary)
                             rekap_data = {
                                 "Tanggal": date_str, "Lokasi": site, "Metode": method,
                                 "Bortle": lp_category.split("(")[-1].replace(")",""),
@@ -330,15 +332,11 @@ with tab_analisis:
                                 "Fajar_Alt": round(onset_alt, 2) if onset_alt is not None else "",
                                 "Fajar_MSAS": round(onset_msas, 2) if onset_msas is not None else ""
                             }
-                            st.session_state.history_rekap.append(rekap_data)
 
-                            # 2. Sinkronisasi Permanen ke Google Sheets (Jika URL GSheets diisi)
-                            if gsheets_url:
-                                is_saved, msg = save_to_google_sheets(rekap_data, gsheets_url)
-                                if not is_saved:
-                                    st.warning(f"Gagal simpan ke Sheets: {msg}")
+                            # Sinkronisasi otomatis ke Google Sheets Permanen
+                            save_to_google_sheets(rekap_data)
                                     
-                            # 3. Visualisasi Grafik
+                            # Visualisasi Plot
                             fig, ax = plt.subplots(figsize=(10, 5))
                             ax.plot(am["sun_alt"], am["mpsas_corrected"], color="black", alpha=0.7, label="SQM Terkoreksi")
                             if is_corrected:
@@ -379,34 +377,41 @@ with tab_analisis:
                         progress_bar.progress((idx + 1) / total_files)
                 
                     status_text.text("")
-                    st.success("✅ Seluruh data berhasil diproses! Hasilnya telah tersimpan di tab Histori & Sinkronisasi.")
+                    st.success("🎉 Analisis selesai! Data telah otomatis tersimpan permanen di Google Sheets.")
 
 # =====================================================================
-# TAB 2: HISTORI & SINKRONISASI
+# TAB 2: HISTORI CLOUD (MENGAMBIL LANGSUNG DARI GOOGLE SHEETS)
 # =====================================================================
 with tab_histori:
-    st.header("📜 Histori Analisis (Sesi Ini)")
-    st.markdown("Data dan grafik di bawah ini merupakan akumulasi dari pengunggahan selama tab browser ini belum ditutup.")
+    st.header("📜 Histori & Basis Data Cloud (Google Sheets)")
+    st.markdown("Tabel di bawah ini ditarik secara *real-time* langsung dari file Google Sheets pusat Anda.")
     
-    if not st.session_state.history_rekap:
-        st.info("Belum ada data histori. Silakan jalankan analisis di tab 'Analisis Baru' terlebih dahulu.")
-    else:
-        df_histori = pd.DataFrame(st.session_state.history_rekap)
-        st.dataframe(df_histori, use_container_width=True)
+    if st.button("🔄 Muat Ulang Data dari Cloud"):
+        st.rerun()
         
-        csv_histori = df_histori.to_csv(index=False).encode('utf-8')
+    df_cloud = load_data_from_google_sheets()
+    
+    if df_cloud.empty:
+        st.info("Belum ada data di Google Sheets atau koneksi belum terkonfigurasi dengan benar.")
+    else:
+        st.dataframe(df_cloud, use_container_width=True)
+        
+        csv_cloud = df_cloud.to_csv(index=False).encode('utf-8')
         st.download_button(
-            label="⬇️ Unduh Seluruh Rekap (CSV)",
-            data=csv_histori,
-            file_name='Kawakib_Histori_SQM.csv',
+            label="⬇️ Unduh Data Cloud (CSV)",
+            data=csv_cloud,
+            file_name='Rekap_Kawakib_Cloud.csv',
             mime='text/csv',
         )
         
         st.divider()
-        st.subheader("📈 Arsip Grafik")
-        for title, figure in st.session_state.history_plot:
-            with st.expander(f"Lihat Grafik: {title}"):
-                st.pyplot(figure)
+        st.subheader("📈 Arsip Grafik Sesi Ini")
+        if not st.session_state.history_plot:
+            st.info("Belum ada grafik yang di-generate pada sesi penjelajahan ini.")
+        else:
+            for title, figure in st.session_state.history_plot:
+                with st.expander(f"Lihat Grafik: {title}"):
+                    st.pyplot(figure)
 
 # =====================================================================
 # TAB 3: PENJELASAN ALGORITMA
