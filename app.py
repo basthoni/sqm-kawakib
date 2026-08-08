@@ -28,10 +28,7 @@ from google.oauth2.service_account import Credentials
 # =====================================================================
 st.set_page_config(page_title="Kawakib SQM Analyzer", page_icon="🌌", layout="wide")
 
-# Link Direct Logo Kawakib
 KAWAKIB_LOGO_URL = "https://lh3.googleusercontent.com/d/1aoTDRdL-wS8EPytGGZ7dsJY3Nntnp-3U"
-
-# Konfigurasi Link Anda
 GSHEETS_PERMANEN_URL = "https://docs.google.com/spreadsheets/d/1E4RpTfcPeQorW3r9cjpZ5cp31dpa7N_oXRZksRWdxG4/edit?gid=0#gid=0"
 SAMPLE_DATA_DRIVE_URL = "https://drive.google.com/drive/folders/1KHg8dRtkt9KrdDFZ8esbiuHQtKJvP2AN?usp=drive_link"
 
@@ -44,14 +41,18 @@ st.markdown("""
     /* Sidebar Styling */
     [data-testid="stSidebar"] {
         background-color: #1A3C40; 
-        padding-top: 1rem;
     }
-    [data-testid="stSidebar"] * {
+    /* Teks Sidebar Spesifik (Menghindari gangguan pada Dropdown) */
+    [data-testid="stSidebar"] div, [data-testid="stSidebar"] p, [data-testid="stSidebar"] label, [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 {
         color: #E8F1F2 !important;
     }
     
-    /* Bingkai Logo Elegan */
+    /* Bingkai Logo Elegan & Ukuran Proporsional */
     [data-testid="stSidebar"] img {
+        max-width: 180px !important;
+        margin-left: auto;
+        margin-right: auto;
+        display: block;
         border-radius: 12px;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
         background-color: #FFFFFF;
@@ -171,7 +172,7 @@ def solar_alt(local_dt, lat, lon, utc_offset):
     H = np.deg2rad((LST * 15.0) - 180.0)
     latr = np.deg2rad(lat)
     alt = np.arcsin(np.sin(latr) * np.sin(dec) + np.cos(latr) * np.cos(dec) * np.cos(H))
-    return np.rad2deg(alt)
+    return np.deg2rad(alt)
 
 def load_sqm_data(file_path):
     site, lat, lon, utc_offset, data_start = read_header_and_find_data_start(file_path)
