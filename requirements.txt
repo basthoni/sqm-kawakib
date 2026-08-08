@@ -7,3 +7,4 @@ ephem
 gspread
 google-auth
 requests
+cloudinary
