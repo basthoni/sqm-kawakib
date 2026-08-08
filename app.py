@@ -38,51 +38,68 @@ if 'history_plot' not in st.session_state:
     st.session_state.history_plot = []
 
 # --- INJEKSI CSS ESTETIKA KAWAKIB (TEAL & TURQUOISE) ---
+# --- INJEKSI CSS ESTETIKA KAWAKIB PRO (ARTISTIC TOUCH) ---
 st.markdown("""
 <style>
+    /* Import Font Akademis (Lora) & Modern (Inter) */
+    @import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,600;1,400&family=Inter:wght@300;400;600&display=swap');
+
     /* Sidebar Styling */
     [data-testid="stSidebar"] {
         background-color: #1A3C40; 
+        padding-top: 2rem;
     }
-    /* Teks Sidebar Spesifik (Menghindari gangguan pada Dropdown) */
-    [data-testid="stSidebar"] div, [data-testid="stSidebar"] p, [data-testid="stSidebar"] label, [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3 {
+    [data-testid="stSidebar"] * {
         color: #E8F1F2 !important;
+        font-family: 'Inter', sans-serif !important;
     }
     
-    /* Bingkai Logo Elegan & Ukuran Proporsional */
+    /* Logo Styling */
     [data-testid="stSidebar"] img {
-        max-width: 180px !important;
+        max-width: 150px !important;
         margin-left: auto;
         margin-right: auto;
         display: block;
-        border-radius: 12px;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
-        background-color: #FFFFFF;
-        padding: 8px;
+        border-radius: 50%; /* Membuat logo jadi lingkaran sempurna */
+        border: 3px solid #1D9A9C;
+        padding: 5px;
+        transition: transform 0.3s ease;
+    }
+    [data-testid="stSidebar"] img:hover {
+        transform: scale(1.05);
     }
 
-    /* Tombol Utama */
+    /* Judul Utama */
+    h1 {
+        font-family: 'Lora', serif !important;
+        color: #1A3C40 !important;
+        font-size: 2.8rem !important;
+        padding-bottom: 0.5rem;
+        border-bottom: 2px solid #1D9A9C;
+    }
+
+    /* Container Kartu (Menciptakan kesan Layering) */
+    .stApp > div > div > div {
+        border-radius: 15px;
+    }
+    
+    /* Tombol */
     .stButton>button {
         background-color: #1D9A9C;
         color: #FFFFFF !important;
-        border-radius: 8px;
+        border-radius: 50px !important; /* Tombol bulat lebih artistik */
         border: none;
-        font-weight: 700;
-        transition: all 0.3s;
-    }
-    .stButton>button:hover {
-        background-color: #25B8BA;
-        transform: scale(1.02);
+        padding: 0.5rem 1.5rem !important;
+        font-weight: 600;
+        transition: all 0.3s ease;
     }
     
-    /* Judul Utama */
-    h1, h2, h3 {
-        color: #1A3C40;
-        font-family: 'Helvetica Neue', sans-serif;
+    /* Ikon dan Teks di tab */
+    [data-baseweb="tab-list"] {
+        gap: 20px;
     }
 </style>
 """, unsafe_allow_html=True)
-
 # =====================================================================
 # KONEKSI CLOUD (CLOUDINARY & GOOGLE SHEETS)
 # =====================================================================
