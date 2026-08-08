@@ -28,7 +28,7 @@ from google.oauth2.service_account import Credentials
 # =====================================================================
 st.set_page_config(page_title="Kawakib SQM Analyzer", page_icon="🌌", layout="wide")
 
-# Logo Kawakib
+# Link Direct Logo Kawakib
 KAWAKIB_LOGO_URL = "https://lh3.googleusercontent.com/d/1aoTDRdL-wS8EPytGGZ7dsJY3Nntnp-3U"
 
 # Konfigurasi Link Anda
@@ -38,15 +38,27 @@ SAMPLE_DATA_DRIVE_URL = "https://drive.google.com/drive/folders/1KHg8dRtkt9KrdDF
 if 'history_plot' not in st.session_state:
     st.session_state.history_plot = []
 
-# --- INJEKSI CSS WARNA KHAS KAWAKIB (TEAL & TURQUOISE THEME) ---
+# --- INJEKSI CSS ESTETIKA KAWAKIB (TEAL & TURQUOISE) ---
 st.markdown("""
 <style>
+    /* Sidebar Styling */
     [data-testid="stSidebar"] {
         background-color: #1A3C40; 
+        padding-top: 1rem;
     }
     [data-testid="stSidebar"] * {
         color: #E8F1F2 !important;
     }
+    
+    /* Bingkai Logo Elegan */
+    [data-testid="stSidebar"] img {
+        border-radius: 12px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+        background-color: #FFFFFF;
+        padding: 8px;
+    }
+
+    /* Tombol Utama */
     .stButton>button {
         background-color: #1D9A9C;
         color: #FFFFFF !important;
@@ -59,8 +71,11 @@ st.markdown("""
         background-color: #25B8BA;
         transform: scale(1.02);
     }
+    
+    /* Judul Utama */
     h1, h2, h3 {
         color: #1A3C40;
+        font-family: 'Helvetica Neue', sans-serif;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -271,7 +286,7 @@ with st.sidebar:
     st.markdown("### 📂 Data Pembelajaran")
     st.markdown(f"[🔗 Unduh Sample Data SQM]({SAMPLE_DATA_DRIVE_URL})")
 
-st.title("🌌 KAWAKIB INSTITUTE: Otonom SQM & Fajar Analyzer")
+st.title("KAWAKIB INSTITUTE: Otonom SQM & Fajar Analyzer")
 st.markdown("Aplikasi web ini mengekstrak titik belok fajar sadiq secara otonom. Terintegrasi dengan sistem penyimpanan cloud untuk analisis data yang persisten.")
 
 tab_analisis, tab_histori, tab_algoritma = st.tabs(["🚀 Analisis Data", "☁️ Basis Data Cloud", "📖 Metodologi & Algoritma"])
