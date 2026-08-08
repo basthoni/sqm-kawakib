@@ -114,7 +114,19 @@ def upload_plot_to_cloudinary(fig, filename):
         os.remove(tmp_path)
         return response.get("secure_url")
     except Exception as e:
-        return f"Gagal Upload Cloudinary: {str(e)}"
+        return ""
+
+def upload_raw_to_cloudinary(file_path, filename):
+    try:
+        response = cloudinary.uploader.upload(
+            file_path, 
+            resource_type="raw", 
+            folder="kawakib_raw_data", 
+            public_id=filename
+        )
+        return response.get("secure_url")
+    except Exception as e:
+        return ""
 
 def get_gsheets_client():
     try:
@@ -313,95 +325,102 @@ st.markdown(f"""
 tab_analisis, tab_histori, tab_algoritma = st.tabs(["🚀 Analisis Data", "☁️ Basis Data Cloud", "📖 Metodologi & Algoritma"])
 
 with tab_analisis:
-    uploaded_files = st.file_uploader("Unggah File Data Observasi", accept_multiple_files=True, type=['dat', 'txt', 'zip'])
-
-#with tab_analisis:
-    # --- MULAI BAGIAN YANG DIUBAH SEMENTARA ---
-    # Hapus parameter accept_multiple_files dan type
-#    file_tunggal = st.file_uploader("Unggah File Data Observasi (Tes 1 File)")
+    # --- IMPLEMENTASI SOLUSI MAS ALFAN (OPSI 1) ---
+    raw_uploads = st.file_uploader("Unggah File Data Observasi", accept_multiple_files=True)
     
-    # Trik: Bungkus file tunggal menjadi list [ ] agar kode perulangan (for) di bawahnya tidak error
-#    uploaded_files = [file_tunggal] if file_tunggal is not None else []
-    # --- AKHIR BAGIAN YANG DIUBAH ---
+    if raw_uploads:
+        # Validasi manual berdasarkan ekstensi
+        uploaded_files = []
+        for f in raw_uploads:
+            if f.name.lower().endswith(('.dat', '.txt', '.zip')):
+                uploaded_files.append(f)
+            else:
+                st.warning(f"⚠️ File '{f.name}' diabaikan (hanya menerima .dat, .txt, .zip)")
+        
+        if uploaded_files:
+            if st.button("Mulai Kalkulasi Fotometri 🚀"):
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    file_paths = list()
+                    for uploaded_file in uploaded_files:
+                        file_path = os.path.join(temp_dir, uploaded_file.name)
+                        with open(file_path, "wb") as f: f.write(uploaded_file.getbuffer())
+                        if uploaded_file.name.endswith(('.zip', '.ZIP')):
+                            with zipfile.ZipFile(file_path, 'r') as zip_ref:
+                                zip_ref.extractall(temp_dir)
+                                for root, dirs, files_in_dir in os.walk(temp_dir):
+                                    for file in files_in_dir:
+                                        if file.endswith(('.dat', '.txt', '.DAT', '.TXT')): file_paths.append(os.path.join(root, file))
+                        else: file_paths.append(file_path)
 
-    if uploaded_files:
-        if st.button("Mulai Kalkulasi Fotometri 🚀"):
-            with tempfile.TemporaryDirectory() as temp_dir:
-                file_paths = list()
-                for uploaded_file in uploaded_files:
-                    file_path = os.path.join(temp_dir, uploaded_file.name)
-                    with open(file_path, "wb") as f: f.write(uploaded_file.getbuffer())
-                    if uploaded_file.name.endswith('.zip'):
-                        with zipfile.ZipFile(file_path, 'r') as zip_ref:
-                            zip_ref.extractall(temp_dir)
-                            for root, dirs, files_in_dir in os.walk(temp_dir):
-                                for file in files_in_dir:
-                                    if file.endswith(('.dat', '.txt')): file_paths.append(os.path.join(root, file))
-                    else: file_paths.append(file_path)
-
-                if not file_paths:
-                    st.error("❌ Tidak ada file .dat yang valid ditemukan.")
-                else:
-                    progress_bar = st.progress(0)
-                    status_text = st.empty()
-                    for idx, path in enumerate(file_paths):
-                        status_text.text(f"Memproses {idx+1}/{len(file_paths)}: {os.path.basename(path)}")
-                        try:
-                            am, site, lat, lon, utc_offset, date_str = load_sqm_data(path)
-                            if am.empty: continue
-                            am, is_corrected = apply_moonlight_correction(am, lat, lon, utc_offset)
-                            bin_deg, n_consec = get_dynamic_params(am)
-                            if method == "SIGMAG-STAB": onset_alt, onset_msas = analyze_sigmag(am, bin_deg, n_consec)
-                            else: onset_alt, onset_msas = analyze_sigmoid(am)
-                            cloud_pct, df_win = analyze_cloud_cover(am, onset_alt)
-                            base_series = am[am["sun_alt"] < -20]["mpsas_corrected"]
-                            baseline_mpsas = base_series.median() if not base_series.empty else am["mpsas_corrected"].max()
-                            lp_category, expected_alt = categorize_light_pollution(baseline_mpsas)
-                                    
-                            fig, ax = plt.subplots(figsize=(10, 5))
-                            ax.plot(am["sun_alt"], am["mpsas_corrected"], color="#1A3C40", alpha=0.8, linewidth=1.5, label="SQM Terkoreksi")
-                            if is_corrected: ax.plot(am["sun_alt"], am["mpsas"], color="#808080", alpha=0.4, linestyle=":", label="SQM Mentah")
-                            if onset_alt is not None:
-                                ax.axvline(onset_alt, color="#1D9A9C", linestyle="--", linewidth=2, label=f"Titik Belok ({onset_alt:.2f}°)")
-                                ax.scatter([onset_alt], [onset_msas], color="#1D9A9C", s=60, zorder=5)
-                            cloudy_points = df_win[df_win['is_cloudy'] == True] if 'is_cloudy' in df_win.columns else pd.DataFrame()
-                            if not cloudy_points.empty:
-                                ax.scatter(cloudy_points["sun_alt"], cloudy_points["mpsas_corrected"], color="#d9534f", s=15, label="Indikasi Awan", zorder=4)
-                            ax.invert_yaxis()
-                            ax.set_xlim(-30, -5)
-                            ax.set_xlabel("Ketinggian Matahari (Derajat)", fontweight='bold')
-                            ax.set_ylabel("Kecerlangan Langit (Mpsas)", fontweight='bold')
-                            ax.set_title(f"{site} | {date_str} [{method}]", color="#1A3C40", fontweight='bold')
-                            ax.grid(True, linestyle=":", alpha=0.6)
-                            onset_str = f"{onset_alt:.2f}°" if onset_alt is not None else "Tidak Ditemukan"
-                            info_text = (f"Garis Dasar  : {baseline_mpsas:.2f} Mpsas\n"
-                                         f"Awan / Bulan : {cloud_pct:.1f}% / {'Aktif' if is_corrected else 'Pasif'}\n"
-                                         f"Fajar Sadiq  : {onset_str}")
-                            props = dict(boxstyle='round', facecolor='#F8F9FA', alpha=0.9, edgecolor='#1A3C40')
-                            ax.text(0.02, baseline_mpsas - 1.2, info_text, transform=ax.get_yaxis_transform(), fontsize=9, verticalalignment='bottom', bbox=props, family='monospace')
-                            ax.legend(loc="upper right")
-                            
-                            filename_plot = f"Plot_{site}_{date_str}_{method}".replace(" ", "_")
-                            status_text.text(f"Sinkronisasi arsip ke Cloudinary: {filename_plot}...")
-                            plot_url = upload_plot_to_cloudinary(fig, filename_plot)
-                            
-                            rekap_data = {
-                                "Tanggal": date_str, "Lokasi": site, "Metode": method,
-                                "Bortle": lp_category.split("(")[-1].replace(")",""),
-                                "Awan_%": round(cloud_pct, 1), "Koreksi_Bulan": "Aktif" if is_corrected else "Pasif",
-                                "Garis_Dasar": round(baseline_mpsas, 2),
-                                "Fajar_Alt": round(onset_alt, 2) if onset_alt is not None else "",
-                                "Fajar_MSAS": round(onset_msas, 2) if onset_msas is not None else "",
-                                "Link_Grafik": plot_url
-                            }
-                            save_to_google_sheets(rekap_data)
-                            st.pyplot(fig)
-                            plt.close(fig)
-                        except Exception as e:
-                            st.error(f"Gagal memproses {os.path.basename(path)}: {str(e)}")
-                        progress_bar.progress((idx + 1) / len(file_paths))
-                    status_text.text("")
-                    st.success("🎉 Seluruh pengamatan berhasil diproses.")
+                    if not file_paths:
+                        st.error("❌ Tidak ada file observasi yang valid ditemukan di dalam arsip.")
+                    else:
+                        progress_bar = st.progress(0)
+                        status_text = st.empty()
+                        for idx, path in enumerate(file_paths):
+                            status_text.text(f"Memproses {idx+1}/{len(file_paths)}: {os.path.basename(path)}")
+                            try:
+                                am, site, lat, lon, utc_offset, date_str = load_sqm_data(path)
+                                if am.empty: continue
+                                am, is_corrected = apply_moonlight_correction(am, lat, lon, utc_offset)
+                                bin_deg, n_consec = get_dynamic_params(am)
+                                if method == "SIGMAG-STAB": onset_alt, onset_msas = analyze_sigmag(am, bin_deg, n_consec)
+                                else: onset_alt, onset_msas = analyze_sigmoid(am)
+                                cloud_pct, df_win = analyze_cloud_cover(am, onset_alt)
+                                base_series = am[am["sun_alt"] < -20]["mpsas_corrected"]
+                                baseline_mpsas = base_series.median() if not base_series.empty else am["mpsas_corrected"].max()
+                                lp_category, expected_alt = categorize_light_pollution(baseline_mpsas)
+                                        
+                                fig, ax = plt.subplots(figsize=(10, 5))
+                                ax.plot(am["sun_alt"], am["mpsas_corrected"], color="#1A3C40", alpha=0.8, linewidth=1.5, label="SQM Terkoreksi")
+                                if is_corrected: ax.plot(am["sun_alt"], am["mpsas"], color="#808080", alpha=0.4, linestyle=":", label="SQM Mentah")
+                                if onset_alt is not None:
+                                    ax.axvline(onset_alt, color="#1D9A9C", linestyle="--", linewidth=2, label=f"Titik Belok ({onset_alt:.2f}°)")
+                                    ax.scatter([onset_alt], [onset_msas], color="#1D9A9C", s=60, zorder=5)
+                                cloudy_points = df_win[df_win['is_cloudy'] == True] if 'is_cloudy' in df_win.columns else pd.DataFrame()
+                                if not cloudy_points.empty:
+                                    ax.scatter(cloudy_points["sun_alt"], cloudy_points["mpsas_corrected"], color="#d9534f", s=15, label="Indikasi Awan", zorder=4)
+                                ax.invert_yaxis()
+                                ax.set_xlim(-30, -5)
+                                ax.set_xlabel("Ketinggian Matahari (Derajat)", fontweight='bold')
+                                ax.set_ylabel("Kecerlangan Langit (Mpsas)", fontweight='bold')
+                                ax.set_title(f"{site} | {date_str} [{method}]", color="#1A3C40", fontweight='bold')
+                                ax.grid(True, linestyle=":", alpha=0.6)
+                                onset_str = f"{onset_alt:.2f}°" if onset_alt is not None else "Tidak Ditemukan"
+                                info_text = (f"Garis Dasar  : {baseline_mpsas:.2f} Mpsas\n"
+                                             f"Awan / Bulan : {cloud_pct:.1f}% / {'Aktif' if is_corrected else 'Pasif'}\n"
+                                             f"Fajar Sadiq  : {onset_str}")
+                                props = dict(boxstyle='round', facecolor='#F8F9FA', alpha=0.9, edgecolor='#1A3C40')
+                                ax.text(0.02, baseline_mpsas - 1.2, info_text, transform=ax.get_yaxis_transform(), fontsize=9, verticalalignment='bottom', bbox=props, family='monospace')
+                                ax.legend(loc="upper right")
+                                
+                                # === PROSES UPLOAD KE CLOUDINARY ===
+                                filename_plot = f"Plot_{site}_{date_str}_{method}".replace(" ", "_")
+                                filename_raw = f"Raw_{site}_{date_str}_{method}.dat".replace(" ", "_")
+                                
+                                status_text.text(f"Mencadangkan arsip ke Cloudinary: {filename_plot}...")
+                                plot_url = upload_plot_to_cloudinary(fig, filename_plot)
+                                raw_url = upload_raw_to_cloudinary(path, filename_raw) # Upload Raw File
+                                
+                                # === SIMPAN KE GOOGLE SHEETS ===
+                                rekap_data = {
+                                    "Tanggal": date_str, "Lokasi": site, "Metode": method,
+                                    "Bortle": lp_category.split("(")[-1].replace(")",""),
+                                    "Awan_%": round(cloud_pct, 1), "Koreksi_Bulan": "Aktif" if is_corrected else "Pasif",
+                                    "Garis_Dasar": round(baseline_mpsas, 2),
+                                    "Fajar_Alt": round(onset_alt, 2) if onset_alt is not None else "",
+                                    "Fajar_MSAS": round(onset_msas, 2) if onset_msas is not None else "",
+                                    "Link_Grafik": plot_url,
+                                    "Link_DataMentah": raw_url 
+                                }
+                                save_to_google_sheets(rekap_data)
+                                st.pyplot(fig)
+                                plt.close(fig)
+                            except Exception as e:
+                                st.error(f"Gagal memproses {os.path.basename(path)}: {str(e)}")
+                            progress_bar.progress((idx + 1) / len(file_paths))
+                        status_text.text("")
+                        st.success("🎉 Seluruh pengamatan berhasil diproses dan diarsipkan ke sistem Cloud.")
 
 with tab_histori:
     st.header("☁️ Basis Data Fotometri Terpusat")
@@ -411,22 +430,29 @@ with tab_histori:
         st.info("Basis data kosong.")
     else:
         df_cloud.columns = df_cloud.columns.astype(str).str.strip()
-        df_display = df_cloud.drop(columns=["Link_Grafik"], errors="ignore")
+        df_display = df_cloud.drop(columns=["Link_Grafik", "Link_DataMentah"], errors="ignore")
         st.dataframe(df_display, use_container_width=True)
         st.download_button(label="⬇️ Unduh CSV", data=df_display.to_csv(index=False).encode('utf-8'), file_name='Rekap_Kawakib_Cloud.csv', mime='text/csv')
         st.divider()
-        st.subheader("📈 Galeri Arsip Pengamatan")
+        
+        st.subheader("📈 Galeri & Akses Data Mentah")
         if "Link_Grafik" not in df_cloud.columns:
-            st.warning("Kolom 'Link_Grafik' belum terbaca.")
+            st.warning("Data arsip belum tersedia.")
         else:
             cols = st.columns(2)
             for idx, row in df_cloud.iterrows():
-                link = str(row.get("Link_Grafik", "")).strip()
-                if link and "res.cloudinary.com" in link:
+                link_plot = str(row.get("Link_Grafik", "")).strip()
+                link_raw = str(row.get("Link_DataMentah", "")).strip()
+                
+                if link_plot and "res.cloudinary.com" in link_plot:
                     with cols[idx % 2]:
                         with st.expander(f"📍 {row.get('Lokasi', 'Unknown')} | 📅 {row.get('Tanggal', '')}"):
-                            st.image(link, use_container_width=True)
+                            st.image(link_plot, use_container_width=True)
                             st.caption(f"**Metode**: {row.get('Metode', '')} | **Titik Fajar**: {row.get('Fajar_Alt', '')}°")
+                            if link_raw:
+                                st.markdown(f"[📥 Unduh Data Mentah (.dat)]({link_raw})")
+                            else:
+                                st.caption("*(Data mentah belum dicadangkan)*")
 
 with tab_algoritma:
     st.header("📖 Metodologi & Landasan Matematis")
