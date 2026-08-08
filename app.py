@@ -41,7 +41,7 @@ st.markdown("""
     @import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,600;1,400&family=Inter:wght@300;400;600&display=swap');
 
     .block-container {
-        padding-top: 2.7rem !important;
+        padding-top: 2.9rem !important;
         padding-bottom: 2rem !important;
     }
 
@@ -50,7 +50,7 @@ st.markdown("""
         padding-top: 1rem !important;
     }
     [data-testid="stSidebar"] * {
-        color: #E8F1F2 !important;
+        color: #1A3C40 !important;
         font-family: 'Inter', sans-serif !important;
     }
     
