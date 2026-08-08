@@ -35,13 +35,13 @@ SAMPLE_DATA_DRIVE_URL = "https://drive.google.com/drive/folders/1KHg8dRtkt9KrdDF
 if 'history_plot' not in st.session_state:
     st.session_state.history_plot = []
 
-# --- INJEKSI CSS BERSIH & RAPI ---
+# --- INJEKSI CSS BERSIH & FIX DROPDOWN ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,600;1,400&family=Inter:wght@300;400;600&display=swap');
 
     .block-container {
-        padding-top: 2.9rem !important;
+        padding-top: 2rem !important;
         padding-bottom: 2rem !important;
     }
 
@@ -49,18 +49,26 @@ st.markdown("""
         background-color: #1A3C40; 
         padding-top: 1.5rem !important;
     }
-    [data-testid="stSidebar"] *, [data-testid="stSidebar"] label {
+    
+    /* Teks umum sidebar (putih) */
+    [data-testid="stSidebar"] p, 
+    [data-testid="stSidebar"] span:not([data-baseweb="select"] span), 
+    [data-testid="stSidebar"] label, 
+    [data-testid="stSidebar"] h1, 
+    [data-testid="stSidebar"] h2, 
+    [data-testid="stSidebar"] h3 {
         color: #E8F1F2 !important;
         font-family: 'Inter', sans-serif !important;
     }
     
-    /* Dropdown Sidebar Styling */
-    [data-testid="stSidebar"] div[data-baseweb="select"] {
+    /* KOTAK DROPDOWN / SELECTBOX DI SIDEBAR (Dipaksa Gelap & Kontras) */
+    [data-testid="stSidebar"] [data-baseweb="select"] {
         background-color: #FFFFFF !important;
-        border-radius: 8px;
+        border-radius: 8px !important;
     }
-    [data-testid="stSidebar"] div[data-baseweb="select"] * {
+    [data-testid="stSidebar"] [data-baseweb="select"] * {
         color: #1A3C40 !important;
+        -webkit-text-fill-color: #1A3C40 !important;
     }
     
     /* Tombol */
