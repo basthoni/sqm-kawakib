@@ -35,7 +35,7 @@ SAMPLE_DATA_DRIVE_URL = "https://drive.google.com/drive/folders/1KHg8dRtkt9KrdDF
 if 'history_plot' not in st.session_state:
     st.session_state.history_plot = []
 
-# --- INJEKSI CSS ESTETIKA KAWAKIB (COMPACT & RESPONSIVE) ---
+# --- INJEKSI CSS ESTETIKA KAWAKIB (CLEAN & COMPACT) ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,600;1,400&family=Inter:wght@300;400;600&display=swap');
@@ -271,20 +271,22 @@ with st.sidebar:
     st.markdown(f"[🔗 Unduh Sample Data SQM]({SAMPLE_DATA_DRIVE_URL})")
 
 # =====================================================================
-# HEADER UTAMA (Responsive HTML Flexbox - Anti-Potong & Aman di HP)
+# HEADER UTAMA (Menggunakan st.image bawaan agar ukuran & proporsinya pas)
 # =====================================================================
-st.markdown(f"""
-    <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 5px; flex-wrap: wrap;">
-        <img src="{KAWAKIB_LOGO_URL}" style="height: 55px; width: auto; object-fit: contain;">
+col_logo, col_title = st.columns([1, 11], vertical_alignment="center")
+
+with col_logo:
+    st.image(KAWAKIB_LOGO_URL, width=65)
+
+with col_title:
+    st.markdown("""
         <h1 style='font-family: Lora, serif; color: #1A3C40; font-size: 1.8rem; margin: 0; padding: 0;'>
             KAWAKIB INSTITUTE: Otonom SQM & Fajar Analyzer
         </h1>
-    </div>
-    <div style="border-bottom: 2px solid #1D9A9C; margin-bottom: 12px; margin-top: 5px;"></div>
-    <p style='color: #555; font-size: 0.95rem; margin-bottom: 15px;'>
-        Aplikasi web ini mengekstrak titik belok fajar sadiq secara otonom. Terintegrasi dengan sistem penyimpanan cloud untuk analisis data yang persisten.
-    </p>
-""", unsafe_allow_html=True)
+    """, unsafe_allow_html=True)
+
+st.markdown("<div style='border-bottom: 2px solid #1D9A9C; margin-top: 8px; margin-bottom: 10px;'></div>", unsafe_allow_html=True)
+st.markdown("<p style='color: #555; font-size: 0.95rem; margin-bottom: 15px;'>Aplikasi web ini mengekstrak titik belok fajar sadiq secara otonom. Terintegrasi dengan sistem penyimpanan cloud untuk analisis data yang persisten.</p>", unsafe_allow_html=True)
 
 tab_analisis, tab_histori, tab_algoritma = st.tabs(["🚀 Analisis Data", "☁️ Basis Data Cloud", "📖 Metodologi & Algoritma"])
 
