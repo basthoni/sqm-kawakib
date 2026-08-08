@@ -313,7 +313,7 @@ st.markdown(f"""
 tab_analisis, tab_histori, tab_algoritma = st.tabs(["🚀 Analisis Data", "☁️ Basis Data Cloud", "📖 Metodologi & Algoritma"])
 
 with tab_analisis:
-    uploaded_files = st.file_uploader("Unggah File Data Observasi", accept_multiple_files=True, type=['dat', 'txt', 'zip'])
+    uploaded_files = st.file_uploader("Unggah File Data Observasi", accept_multiple_files=True)    #, type=['dat', 'txt', 'zip'])
     if uploaded_files:
         if st.button("Mulai Kalkulasi Fotometri 🚀"):
             with tempfile.TemporaryDirectory() as temp_dir:
