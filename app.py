@@ -35,7 +35,7 @@ SAMPLE_DATA_DRIVE_URL = "https://drive.google.com/drive/folders/1KHg8dRtkt9KrdDF
 if 'history_plot' not in st.session_state:
     st.session_state.history_plot = []
 
-# --- INJEKSI CSS ESTETIKA KAWAKIB (TRANSPARENT & ELEGANT) ---
+# --- INJEKSI CSS ESTETIKA KAWAKIB (CLEAN & TRANSPARENT) ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,600;1,400&family=Inter:wght@300;400;600&display=swap');
@@ -49,16 +49,16 @@ st.markdown("""
         font-family: 'Inter', sans-serif !important;
     }
     
-    /* Logo Bulat & Transparan */
+    /* Logo Bersih & Transparan (Tanpa bingkai/lingkaran) */
     [data-testid="stSidebar"] img {
-        max-width: 120px !important; /* Dikecilkan sedikit agar artistik */
+        max-width: 180px !important;
         margin: 0 auto 20px auto;
         display: block;
-        border-radius: 50%;
-        border: 3px solid #1D9A9C;
-        background-color: transparent !important; /* Menghapus background putih */
-        padding: 0px !important; /* Menghapus jarak box putih */
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        background-color: transparent !important;
+        border: none !important;
+        border-radius: 0 !important;
+        padding: 0 !important;
+        box-shadow: none !important;
     }
 
     /* Judul Utama */
@@ -175,7 +175,7 @@ def solar_alt(local_dt, lat, lon, utc_offset):
     H = np.deg2rad((LST * 15.0) - 180.0)
     latr = np.deg2rad(lat)
     alt = np.arcsin(np.sin(latr) * np.sin(dec) + np.cos(latr) * np.cos(dec) * np.cos(H))
-    return np.deg2rad(alt)
+    return np.rad2deg(alt)
 
 def load_sqm_data(file_path):
     site, lat, lon, utc_offset, data_start = read_header_and_find_data_start(file_path)
