@@ -28,7 +28,9 @@ from google.oauth2.service_account import Credentials
 # =====================================================================
 st.set_page_config(page_title="Kawakib SQM Analyzer", page_icon="🌌", layout="wide")
 
-KAWAKIB_LOGO_URL = "https://lh3.googleusercontent.com/d/1aoTDRdL-wS8EPytGGZ7dsJY3Nntnp-3U"
+#KAWAKIB_LOGO_URL = "https://lh3.googleusercontent.com/d/1aoTDRdL-wS8EPytGGZ7dsJY3Nntnp-3U"
+KAWAKIB_LOGO_URL = "https://lh3.googleusercontent.com/d/1FnM5JFggwEZft-vJLNPMYrCBJPUlNgcc"
+#https://drive.google.com/file/d/1FnM5JFggwEZft-vJLNPMYrCBJPUlNgcc/view?usp=sharing"
 GSHEETS_PERMANEN_URL = "https://docs.google.com/spreadsheets/d/1E4RpTfcPeQorW3r9cjpZ5cp31dpa7N_oXRZksRWdxG4/edit?gid=0#gid=0"
 SAMPLE_DATA_DRIVE_URL = "https://drive.google.com/drive/folders/1KHg8dRtkt9KrdDFZ8esbiuHQtKJvP2AN?usp=drive_link"
 
