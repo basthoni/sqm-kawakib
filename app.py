@@ -45,15 +45,33 @@ st.markdown("""
         padding-bottom: 2rem !important;
     }
 
+    /* Sidebar Styling */
     [data-testid="stSidebar"] {
         background-color: #1A3C40; 
         padding-top: 1rem !important;
     }
-    [data-testid="stSidebar"] * {
-        color: #1A3C40 !important;
+    
+    /* Teks umum, label, dan judul di dalam sidebar (Warna terang/kontras) */
+    [data-testid="stSidebar"] p, 
+    [data-testid="stSidebar"] span, 
+    [data-testid="stSidebar"] label, 
+    [data-testid="stSidebar"] h1, 
+    [data-testid="stSidebar"] h2, 
+    [data-testid="stSidebar"] h3 {
+        color: #E8F1F2 !important;
         font-family: 'Inter', sans-serif !important;
     }
     
+    /* Kotak Dropdown / Selectbox di Sidebar agar latar putih & teksnya gelap */
+    [data-testid="stSidebar"] div[data-baseweb="select"] {
+        background-color: #FFFFFF !important;
+        border-radius: 8px;
+    }
+    [data-testid="stSidebar"] div[data-baseweb="select"] * {
+        color: #1A3C40 !important;
+    }
+    
+    /* Tombol Utama */
     .stButton>button {
         background-color: #1D9A9C;
         color: #FFFFFF !important;
