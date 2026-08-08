@@ -28,23 +28,18 @@ from google.oauth2.service_account import Credentials
 # =====================================================================
 st.set_page_config(page_title="Kawakib SQM Analyzer", page_icon="🌌", layout="wide")
 
-#KAWAKIB_LOGO_URL = "https://lh3.googleusercontent.com/d/1aoTDRdL-wS8EPytGGZ7dsJY3Nntnp-3U"
-KAWAKIB_LOGO_URL = "https://lh3.googleusercontent.com/d/1FnM5JFggwEZft-vJLNPMYrCBJPUlNgcc"
-#https://drive.google.com/file/d/1FnM5JFggwEZft-vJLNPMYrCBJPUlNgcc/view?usp=sharing"
+KAWAKIB_LOGO_URL = "https://lh3.googleusercontent.com/d/1aoTDRdL-wS8EPytGGZ7dsJY3Nntnp-3U"
 GSHEETS_PERMANEN_URL = "https://docs.google.com/spreadsheets/d/1E4RpTfcPeQorW3r9cjpZ5cp31dpa7N_oXRZksRWdxG4/edit?gid=0#gid=0"
 SAMPLE_DATA_DRIVE_URL = "https://drive.google.com/drive/folders/1KHg8dRtkt9KrdDFZ8esbiuHQtKJvP2AN?usp=drive_link"
 
 if 'history_plot' not in st.session_state:
     st.session_state.history_plot = []
 
-# --- INJEKSI CSS ESTETIKA KAWAKIB (TEAL & TURQUOISE) ---
 # --- INJEKSI CSS ESTETIKA KAWAKIB PRO (ARTISTIC TOUCH) ---
 st.markdown("""
 <style>
-    /* Import Font Akademis (Lora) & Modern (Inter) */
     @import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,600;1,400&family=Inter:wght@300;400;600&display=swap');
 
-    /* Sidebar Styling */
     [data-testid="stSidebar"] {
         background-color: #1A3C40; 
         padding-top: 2rem;
@@ -54,52 +49,43 @@ st.markdown("""
         font-family: 'Inter', sans-serif !important;
     }
     
-    /* Logo Styling */
+    /* Logo Bulat & Elegan */
     [data-testid="stSidebar"] img {
         max-width: 150px !important;
         margin-left: auto;
         margin-right: auto;
         display: block;
-        border-radius: 50%; /* Membuat logo jadi lingkaran sempurna */
-        border: 3px solid #1D9A9C;
+        border-radius: 50%;
+        border: 4px solid #1D9A9C;
         padding: 5px;
+        background-color: #FFFFFF;
         transition: transform 0.3s ease;
     }
-    [data-testid="stSidebar"] img:hover {
-        transform: scale(1.05);
-    }
+    [data-testid="stSidebar"] img:hover { transform: scale(1.05); }
 
     /* Judul Utama */
     h1 {
         font-family: 'Lora', serif !important;
         color: #1A3C40 !important;
-        font-size: 2.8rem !important;
-        padding-bottom: 0.5rem;
+        font-size: 2.5rem !important;
         border-bottom: 2px solid #1D9A9C;
-    }
-
-    /* Container Kartu (Menciptakan kesan Layering) */
-    .stApp > div > div > div {
-        border-radius: 15px;
+        padding-bottom: 10px;
     }
     
-    /* Tombol */
+    /* Tombol Utama */
     .stButton>button {
         background-color: #1D9A9C;
         color: #FFFFFF !important;
-        border-radius: 50px !important; /* Tombol bulat lebih artistik */
+        border-radius: 50px !important;
         border: none;
         padding: 0.5rem 1.5rem !important;
         font-weight: 600;
         transition: all 0.3s ease;
     }
-    
-    /* Ikon dan Teks di tab */
-    [data-baseweb="tab-list"] {
-        gap: 20px;
-    }
+    .stButton>button:hover { background-color: #25B8BA; }
 </style>
 """, unsafe_allow_html=True)
+
 # =====================================================================
 # KONEKSI CLOUD (CLOUDINARY & GOOGLE SHEETS)
 # =====================================================================
@@ -191,7 +177,7 @@ def solar_alt(local_dt, lat, lon, utc_offset):
     H = np.deg2rad((LST * 15.0) - 180.0)
     latr = np.deg2rad(lat)
     alt = np.arcsin(np.sin(latr) * np.sin(dec) + np.cos(latr) * np.cos(dec) * np.cos(H))
-    return np.deg2rad(alt)
+    return np.rad2deg(alt)
 
 def load_sqm_data(file_path):
     site, lat, lon, utc_offset, data_start = read_header_and_find_data_start(file_path)
