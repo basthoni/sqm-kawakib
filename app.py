@@ -312,8 +312,17 @@ st.markdown(f"""
 
 tab_analisis, tab_histori, tab_algoritma = st.tabs(["🚀 Analisis Data", "☁️ Basis Data Cloud", "📖 Metodologi & Algoritma"])
 
+#with tab_analisis:
+#    uploaded_files = st.file_uploader("Unggah File Data Observasi", accept_multiple_files=True, type=['dat', 'txt', 'zip'])
 with tab_analisis:
-    uploaded_files = st.file_uploader("Unggah File Data Observasi", accept_multiple_files=True, type=['dat', 'txt', 'zip'])
+    # --- MULAI BAGIAN YANG DIUBAH SEMENTARA ---
+    # Hapus parameter accept_multiple_files dan type
+    file_tunggal = st.file_uploader("Unggah File Data Observasi (Tes 1 File)")
+    
+    # Trik: Bungkus file tunggal menjadi list [ ] agar kode perulangan (for) di bawahnya tidak error
+    uploaded_files = [file_tunggal] if file_tunggal is not None else []
+    # --- AKHIR BAGIAN YANG DIUBAH ---
+
     if uploaded_files:
         if st.button("Mulai Kalkulasi Fotometri 🚀"):
             with tempfile.TemporaryDirectory() as temp_dir:
