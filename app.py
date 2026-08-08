@@ -51,7 +51,7 @@ st.markdown("""
         padding-top: 1rem !important;
     }
     
-    /* Teks umum, label, dan judul di dalam sidebar (Warna terang/kontras) */
+    /* Teks umum, label, dan judul di dalam sidebar */
     [data-testid="stSidebar"] p, 
     [data-testid="stSidebar"] span, 
     [data-testid="stSidebar"] label, 
@@ -62,7 +62,17 @@ st.markdown("""
         font-family: 'Inter', sans-serif !important;
     }
     
-    /* Kotak Dropdown / Selectbox di Sidebar agar latar putih & teksnya gelap */
+    /* Memperbaiki Warna Teks Link di Sidebar agar tidak tenggelam */
+    [data-testid="stSidebar"] a {
+        color: #25B8BA !important;
+        text-decoration: underline;
+        font-weight: 600;
+    }
+    [data-testid="stSidebar"] a:hover {
+        color: #FFFFFF !important;
+    }
+
+    /* Kotak Dropdown / Selectbox di Sidebar */
     [data-testid="stSidebar"] div[data-baseweb="select"] {
         background-color: #FFFFFF !important;
         border-radius: 8px;
@@ -289,7 +299,7 @@ with st.sidebar:
     st.markdown(f"[🔗 Unduh Sample Data SQM]({SAMPLE_DATA_DRIVE_URL})")
 
 # =====================================================================
-# HEADER UTAMA (Murni Flexbox HTML yang Rapi, Kompak, & Responsif)
+# HEADER UTAMA (Murni Flexbox HTML yang Rapi & Kompak)
 # =====================================================================
 st.markdown(f"""
     <div style="display: flex; align-items: center; gap: 14px; margin-bottom: 4px;">
