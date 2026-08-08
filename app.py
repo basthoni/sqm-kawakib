@@ -41,7 +41,7 @@ st.markdown("""
     @import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,600;1,400&family=Inter:wght@300;400;600&display=swap');
 
     .block-container {
-        padding-top: 1.2rem !important;
+        padding-top: 2.2rem !important;
         padding-bottom: 2rem !important;
     }
 
