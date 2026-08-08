@@ -35,18 +35,16 @@ SAMPLE_DATA_DRIVE_URL = "https://drive.google.com/drive/folders/1KHg8dRtkt9KrdDF
 if 'history_plot' not in st.session_state:
     st.session_state.history_plot = []
 
-# --- INJEKSI CSS ESTETIKA KAWAKIB (COMPACT & PROFESSIONAL SPACING) ---
+# --- INJEKSI CSS ESTETIKA KAWAKIB (COMPACT & RESPONSIVE) ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,600;1,400&family=Inter:wght@300;400;600&display=swap');
 
-    /* Memangkas jarak kosong (padding atas) bawaan Streamlit */
     .block-container {
-        padding-top: 2rem !important;
+        padding-top: 1.5rem !important;
         padding-bottom: 2rem !important;
     }
 
-    /* Sidebar Spacing & Styling */
     [data-testid="stSidebar"] {
         background-color: #1A3C40; 
         padding-top: 1rem !important;
@@ -56,7 +54,6 @@ st.markdown("""
         font-family: 'Inter', sans-serif !important;
     }
     
-    /* Tombol Utama */
     .stButton>button {
         background-color: #1D9A9C;
         color: #FFFFFF !important;
@@ -274,21 +271,20 @@ with st.sidebar:
     st.markdown(f"[🔗 Unduh Sample Data SQM]({SAMPLE_DATA_DRIVE_URL})")
 
 # =====================================================================
-# HEADER UTAMA (Kompak & Elegan)
+# HEADER UTAMA (Responsive HTML Flexbox - Anti-Potong & Aman di HP)
 # =====================================================================
-col_logo, col_title = st.columns([1, 9], vertical_alignment="center")
-
-with col_logo:
-    st.image(KAWAKIB_LOGO_URL, use_container_width=True)
-
-with col_title:
-    st.markdown("""
-        <h1 style='font-family: Lora, serif; color: #1A3C40; font-size: 2.0rem; margin: 0; border-bottom: 2px solid #1D9A9C; padding-bottom: 6px;'>
+st.markdown(f"""
+    <div style="display: flex; align-items: center; gap: 15px; margin-bottom: 5px; flex-wrap: wrap;">
+        <img src="{KAWAKIB_LOGO_URL}" style="height: 55px; width: auto; object-fit: contain;">
+        <h1 style='font-family: Lora, serif; color: #1A3C40; font-size: 1.8rem; margin: 0; padding: 0;'>
             KAWAKIB INSTITUTE: Otonom SQM & Fajar Analyzer
         </h1>
-    """, unsafe_allow_html=True)
-
-st.markdown("<p style='margin-top: 6px; margin-bottom: 15px; color: #555; font-size: 0.95rem;'>Aplikasi web ini mengekstrak titik belok fajar sadiq secara otonom. Terintegrasi dengan sistem penyimpanan cloud untuk analisis data yang persisten.</p>", unsafe_allow_html=True)
+    </div>
+    <div style="border-bottom: 2px solid #1D9A9C; margin-bottom: 12px; margin-top: 5px;"></div>
+    <p style='color: #555; font-size: 0.95rem; margin-bottom: 15px;'>
+        Aplikasi web ini mengekstrak titik belok fajar sadiq secara otonom. Terintegrasi dengan sistem penyimpanan cloud untuk analisis data yang persisten.
+    </p>
+""", unsafe_allow_html=True)
 
 tab_analisis, tab_histori, tab_algoritma = st.tabs(["🚀 Analisis Data", "☁️ Basis Data Cloud", "📖 Metodologi & Algoritma"])
 
