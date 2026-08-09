@@ -146,11 +146,43 @@ def save_to_google_sheets(data_dict):
     try:
         sheet = client.open_by_url(GSHEETS_PERMANEN_URL).sheet1
         existing_data = sheet.get_all_values()
+        
         if not existing_data:
             sheet.append_row(list(data_dict.keys()))
-        sheet.append_row([str(data_dict.get(key, "")) for key in data_dict.keys()])
+            sheet.append_row([str(data_dict.get(key, "")) for key in data_dict.keys()])
+            return True
+            
+        headers = existing_data[0]
+        try:
+            idx_tgl = headers.index("Tanggal")
+            idx_lok = headers.index("Lokasi")
+            idx_met = headers.index("Metode")
+        except ValueError:
+            sheet.append_row([str(data_dict.get(key, "")) for key in headers])
+            return True
+
+        row_to_update = None
+        for i, row in enumerate(existing_data[1:], start=2):
+            if len(row) > max(idx_tgl, idx_lok, idx_met):
+                if (row[idx_tgl] == str(data_dict["Tanggal"]) and 
+                    row[idx_lok] == str(data_dict["Lokasi"]) and 
+                    row[idx_met] == str(data_dict["Metode"])):
+                    row_to_update = i
+                    break
+        
+        if row_to_update:
+            cell_list = sheet.range(f'A{row_to_update}:{chr(65+len(headers)-1)}{row_to_update}')
+            values = [str(data_dict.get(h, "")) for h in headers]
+            for cell, val in zip(cell_list, values):
+                cell.value = val
+            sheet.update_cells(cell_list)
+        else:
+            sheet.append_row([str(data_dict.get(key, "")) for key in headers])
+            
         return True
-    except: return False
+    except Exception as e: 
+        print(f"Gagal simpan ke GSheets: {e}")
+        return False
 
 def load_data_from_google_sheets():
     client = get_gsheets_client()
@@ -308,7 +340,7 @@ with st.sidebar:
     method = st.selectbox("Metode Ekstraksi Fajar", ["SIGMAG-STAB", "SIGMOID"])
     st.info("Unggah file instrumen SQM (.dat) atau arsip .zip untuk analisis masal.")
     st.divider()
-    st.markdown("### 📂 Data Uji Coba")
+    st.markdown("### 📂 Data Pembelajaran")
     st.markdown(f"[🔗 Unduh Sample Data SQM]({SAMPLE_DATA_DRIVE_URL})")
 
 # =====================================================================
@@ -330,7 +362,6 @@ st.markdown(f"""
 tab_analisis, tab_histori, tab_algoritma = st.tabs(["🚀 Analisis Data", "☁️ Basis Data Cloud", "📖 Metodologi & Algoritma"])
 
 with tab_analisis:
-    # KEMBALI KE PENGATURAN AWAL YANG AMAN (Hanya .dat, .txt, .zip)
     uploaded_files = st.file_uploader(
         "Unggah File Data Observasi", 
         accept_multiple_files=True, 
@@ -355,6 +386,9 @@ with tab_analisis:
                 if not file_paths:
                     st.error("❌ Tidak ada file .dat yang valid ditemukan di dalam arsip.")
                 else:
+                    # Ambil data existing GSheets sekali di awal untuk optimasi duplikat
+                    df_existing = load_data_from_google_sheets()
+
                     progress_bar = st.progress(0)
                     status_text = st.empty()
                     for idx, path in enumerate(file_paths):
@@ -394,15 +428,30 @@ with tab_analisis:
                             ax.text(0.02, baseline_mpsas - 1.2, info_text, transform=ax.get_yaxis_transform(), fontsize=9, verticalalignment='bottom', bbox=props, family='monospace')
                             ax.legend(loc="upper right")
                             
-                            # === PROSES UPLOAD KE CLOUDINARY ===
+                            # === CEK DUPLIKAT SUPAYA TIDAK UPLOAD ULANG KE CLOUDINARY ===
+                            plot_url = ""
+                            raw_url = ""
+                            if not df_existing.empty and {"Tanggal", "Lokasi", "Metode"}.issubset(df_existing.columns):
+                                match = df_existing[
+                                    (df_existing["Tanggal"].astype(str).str.strip() == str(date_str)) & 
+                                    (df_existing["Lokasi"].astype(str).str.strip() == str(site)) & 
+                                    (df_existing["Metode"].astype(str).str.strip() == str(method))
+                                ]
+                                if not match.empty:
+                                    plot_url = str(match.iloc[0].get("Link_Grafik", "")).strip()
+                                    raw_url = str(match.iloc[0].get("Link_DataMentah", "")).strip()
+
                             filename_plot = f"Plot_{site}_{date_str}_{method}".replace(" ", "_")
                             filename_raw = f"Raw_{site}_{date_str}_{method}.dat".replace(" ", "_")
+
+                            if plot_url and raw_url:
+                                status_text.text(f"Data duplikat terdeteksi: Menggunakan arsip Cloudinary yang sudah ada...")
+                            else:
+                                status_text.text(f"Mengunggah arsip baru ke Cloudinary: {filename_plot}...")
+                                plot_url = upload_plot_to_cloudinary(fig, filename_plot)
+                                raw_url = upload_raw_to_cloudinary(path, filename_raw)
                             
-                            status_text.text(f"Mencadangkan arsip ke Cloudinary: {filename_plot}...")
-                            plot_url = upload_plot_to_cloudinary(fig, filename_plot)
-                            raw_url = upload_raw_to_cloudinary(path, filename_raw) # Upload Raw File
-                            
-                            # === SIMPAN KE GOOGLE SHEETS ===
+                            # === SIMPAN / UPDATE KE GOOGLE SHEETS (UPSERT) ===
                             rekap_data = {
                                 "Tanggal": date_str, "Lokasi": site, "Metode": method,
                                 "Bortle": lp_category.split("(")[-1].replace(")",""),
@@ -420,7 +469,7 @@ with tab_analisis:
                             st.error(f"Gagal memproses {os.path.basename(path)}: {str(e)}")
                         progress_bar.progress((idx + 1) / len(file_paths))
                     status_text.text("")
-                    st.success("🎉 Seluruh pengamatan berhasil diproses dan diarsipkan ke sistem Cloud.")
+                    st.success("🎉 Seluruh pengamatan berhasil diproses dan disinkronisasi ke Cloud.")
 
 with tab_histori:
     st.header("☁️ Basis Data Fotometri Terpusat")
