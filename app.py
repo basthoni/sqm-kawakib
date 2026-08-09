@@ -308,7 +308,7 @@ with st.sidebar:
     method = st.selectbox("Metode Ekstraksi Fajar", ["SIGMAG-STAB", "SIGMOID"])
     st.info("Unggah file instrumen SQM (.dat) atau arsip .zip untuk analisis masal.")
     st.divider()
-    st.markdown("### 📂 Data Pembelajaran")
+    st.markdown("### 📂 Data Uji Coba")
     st.markdown(f"[🔗 Unduh Sample Data SQM]({SAMPLE_DATA_DRIVE_URL})")
 
 # =====================================================================
