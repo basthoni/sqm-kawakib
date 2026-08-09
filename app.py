@@ -325,102 +325,97 @@ st.markdown(f"""
 tab_analisis, tab_histori, tab_algoritma = st.tabs(["🚀 Analisis Data", "☁️ Basis Data Cloud", "📖 Metodologi & Algoritma"])
 
 with tab_analisis:
-    # --- IMPLEMENTASI SOLUSI MAS ALFAN (OPSI 1) ---
-    raw_uploads = st.file_uploader("Unggah File Data Observasi", accept_multiple_files=True)
+    # KEMBALI KE PENGATURAN AWAL YANG AMAN (Hanya .dat, .txt, .zip)
+    uploaded_files = st.file_uploader(
+        "Unggah File Data Observasi", 
+        accept_multiple_files=True, 
+        type=['dat', 'DAT', 'txt', 'TXT', 'zip', 'ZIP']
+    )
     
-    if raw_uploads:
-        # Validasi manual berdasarkan ekstensi
-        uploaded_files = []
-        for f in raw_uploads:
-            if f.name.lower().endswith(('.dat', '.txt', '.zip')):
-                uploaded_files.append(f)
-            else:
-                st.warning(f"⚠️ File '{f.name}' diabaikan (hanya menerima .dat, .txt, .zip)")
-        
-        if uploaded_files:
-            if st.button("Mulai Kalkulasi Fotometri 🚀"):
-                with tempfile.TemporaryDirectory() as temp_dir:
-                    file_paths = list()
-                    for uploaded_file in uploaded_files:
-                        file_path = os.path.join(temp_dir, uploaded_file.name)
-                        with open(file_path, "wb") as f: f.write(uploaded_file.getbuffer())
-                        if uploaded_file.name.endswith(('.zip', '.ZIP')):
-                            with zipfile.ZipFile(file_path, 'r') as zip_ref:
-                                zip_ref.extractall(temp_dir)
-                                for root, dirs, files_in_dir in os.walk(temp_dir):
-                                    for file in files_in_dir:
-                                        if file.endswith(('.dat', '.txt', '.DAT', '.TXT')): file_paths.append(os.path.join(root, file))
-                        else: file_paths.append(file_path)
+    if uploaded_files:
+        if st.button("Mulai Kalkulasi Fotometri 🚀"):
+            with tempfile.TemporaryDirectory() as temp_dir:
+                file_paths = list()
+                for uploaded_file in uploaded_files:
+                    file_path = os.path.join(temp_dir, uploaded_file.name)
+                    with open(file_path, "wb") as f: f.write(uploaded_file.getbuffer())
+                    if uploaded_file.name.endswith(('.zip', '.ZIP')):
+                        with zipfile.ZipFile(file_path, 'r') as zip_ref:
+                            zip_ref.extractall(temp_dir)
+                            for root, dirs, files_in_dir in os.walk(temp_dir):
+                                for file in files_in_dir:
+                                    if file.endswith(('.dat', '.txt', '.DAT', '.TXT')): file_paths.append(os.path.join(root, file))
+                    else: file_paths.append(file_path)
 
-                    if not file_paths:
-                        st.error("❌ Tidak ada file observasi yang valid ditemukan di dalam arsip.")
-                    else:
-                        progress_bar = st.progress(0)
-                        status_text = st.empty()
-                        for idx, path in enumerate(file_paths):
-                            status_text.text(f"Memproses {idx+1}/{len(file_paths)}: {os.path.basename(path)}")
-                            try:
-                                am, site, lat, lon, utc_offset, date_str = load_sqm_data(path)
-                                if am.empty: continue
-                                am, is_corrected = apply_moonlight_correction(am, lat, lon, utc_offset)
-                                bin_deg, n_consec = get_dynamic_params(am)
-                                if method == "SIGMAG-STAB": onset_alt, onset_msas = analyze_sigmag(am, bin_deg, n_consec)
-                                else: onset_alt, onset_msas = analyze_sigmoid(am)
-                                cloud_pct, df_win = analyze_cloud_cover(am, onset_alt)
-                                base_series = am[am["sun_alt"] < -20]["mpsas_corrected"]
-                                baseline_mpsas = base_series.median() if not base_series.empty else am["mpsas_corrected"].max()
-                                lp_category, expected_alt = categorize_light_pollution(baseline_mpsas)
-                                        
-                                fig, ax = plt.subplots(figsize=(10, 5))
-                                ax.plot(am["sun_alt"], am["mpsas_corrected"], color="#1A3C40", alpha=0.8, linewidth=1.5, label="SQM Terkoreksi")
-                                if is_corrected: ax.plot(am["sun_alt"], am["mpsas"], color="#808080", alpha=0.4, linestyle=":", label="SQM Mentah")
-                                if onset_alt is not None:
-                                    ax.axvline(onset_alt, color="#1D9A9C", linestyle="--", linewidth=2, label=f"Titik Belok ({onset_alt:.2f}°)")
-                                    ax.scatter([onset_alt], [onset_msas], color="#1D9A9C", s=60, zorder=5)
-                                cloudy_points = df_win[df_win['is_cloudy'] == True] if 'is_cloudy' in df_win.columns else pd.DataFrame()
-                                if not cloudy_points.empty:
-                                    ax.scatter(cloudy_points["sun_alt"], cloudy_points["mpsas_corrected"], color="#d9534f", s=15, label="Indikasi Awan", zorder=4)
-                                ax.invert_yaxis()
-                                ax.set_xlim(-30, -5)
-                                ax.set_xlabel("Ketinggian Matahari (Derajat)", fontweight='bold')
-                                ax.set_ylabel("Kecerlangan Langit (Mpsas)", fontweight='bold')
-                                ax.set_title(f"{site} | {date_str} [{method}]", color="#1A3C40", fontweight='bold')
-                                ax.grid(True, linestyle=":", alpha=0.6)
-                                onset_str = f"{onset_alt:.2f}°" if onset_alt is not None else "Tidak Ditemukan"
-                                info_text = (f"Garis Dasar  : {baseline_mpsas:.2f} Mpsas\n"
-                                             f"Awan / Bulan : {cloud_pct:.1f}% / {'Aktif' if is_corrected else 'Pasif'}\n"
-                                             f"Fajar Sadiq  : {onset_str}")
-                                props = dict(boxstyle='round', facecolor='#F8F9FA', alpha=0.9, edgecolor='#1A3C40')
-                                ax.text(0.02, baseline_mpsas - 1.2, info_text, transform=ax.get_yaxis_transform(), fontsize=9, verticalalignment='bottom', bbox=props, family='monospace')
-                                ax.legend(loc="upper right")
-                                
-                                # === PROSES UPLOAD KE CLOUDINARY ===
-                                filename_plot = f"Plot_{site}_{date_str}_{method}".replace(" ", "_")
-                                filename_raw = f"Raw_{site}_{date_str}_{method}.dat".replace(" ", "_")
-                                
-                                status_text.text(f"Mencadangkan arsip ke Cloudinary: {filename_plot}...")
-                                plot_url = upload_plot_to_cloudinary(fig, filename_plot)
-                                raw_url = upload_raw_to_cloudinary(path, filename_raw) # Upload Raw File
-                                
-                                # === SIMPAN KE GOOGLE SHEETS ===
-                                rekap_data = {
-                                    "Tanggal": date_str, "Lokasi": site, "Metode": method,
-                                    "Bortle": lp_category.split("(")[-1].replace(")",""),
-                                    "Awan_%": round(cloud_pct, 1), "Koreksi_Bulan": "Aktif" if is_corrected else "Pasif",
-                                    "Garis_Dasar": round(baseline_mpsas, 2),
-                                    "Fajar_Alt": round(onset_alt, 2) if onset_alt is not None else "",
-                                    "Fajar_MSAS": round(onset_msas, 2) if onset_msas is not None else "",
-                                    "Link_Grafik": plot_url,
-                                    "Link_DataMentah": raw_url 
-                                }
-                                save_to_google_sheets(rekap_data)
-                                st.pyplot(fig)
-                                plt.close(fig)
-                            except Exception as e:
-                                st.error(f"Gagal memproses {os.path.basename(path)}: {str(e)}")
-                            progress_bar.progress((idx + 1) / len(file_paths))
-                        status_text.text("")
-                        st.success("🎉 Seluruh pengamatan berhasil diproses dan diarsipkan ke sistem Cloud.")
+                if not file_paths:
+                    st.error("❌ Tidak ada file .dat yang valid ditemukan di dalam arsip.")
+                else:
+                    progress_bar = st.progress(0)
+                    status_text = st.empty()
+                    for idx, path in enumerate(file_paths):
+                        status_text.text(f"Memproses {idx+1}/{len(file_paths)}: {os.path.basename(path)}")
+                        try:
+                            am, site, lat, lon, utc_offset, date_str = load_sqm_data(path)
+                            if am.empty: continue
+                            am, is_corrected = apply_moonlight_correction(am, lat, lon, utc_offset)
+                            bin_deg, n_consec = get_dynamic_params(am)
+                            if method == "SIGMAG-STAB": onset_alt, onset_msas = analyze_sigmag(am, bin_deg, n_consec)
+                            else: onset_alt, onset_msas = analyze_sigmoid(am)
+                            cloud_pct, df_win = analyze_cloud_cover(am, onset_alt)
+                            base_series = am[am["sun_alt"] < -20]["mpsas_corrected"]
+                            baseline_mpsas = base_series.median() if not base_series.empty else am["mpsas_corrected"].max()
+                            lp_category, expected_alt = categorize_light_pollution(baseline_mpsas)
+                                    
+                            fig, ax = plt.subplots(figsize=(10, 5))
+                            ax.plot(am["sun_alt"], am["mpsas_corrected"], color="#1A3C40", alpha=0.8, linewidth=1.5, label="SQM Terkoreksi")
+                            if is_corrected: ax.plot(am["sun_alt"], am["mpsas"], color="#808080", alpha=0.4, linestyle=":", label="SQM Mentah")
+                            if onset_alt is not None:
+                                ax.axvline(onset_alt, color="#1D9A9C", linestyle="--", linewidth=2, label=f"Titik Belok ({onset_alt:.2f}°)")
+                                ax.scatter([onset_alt], [onset_msas], color="#1D9A9C", s=60, zorder=5)
+                            cloudy_points = df_win[df_win['is_cloudy'] == True] if 'is_cloudy' in df_win.columns else pd.DataFrame()
+                            if not cloudy_points.empty:
+                                ax.scatter(cloudy_points["sun_alt"], cloudy_points["mpsas_corrected"], color="#d9534f", s=15, label="Indikasi Awan", zorder=4)
+                            ax.invert_yaxis()
+                            ax.set_xlim(-30, -5)
+                            ax.set_xlabel("Ketinggian Matahari (Derajat)", fontweight='bold')
+                            ax.set_ylabel("Kecerlangan Langit (Mpsas)", fontweight='bold')
+                            ax.set_title(f"{site} | {date_str} [{method}]", color="#1A3C40", fontweight='bold')
+                            ax.grid(True, linestyle=":", alpha=0.6)
+                            onset_str = f"{onset_alt:.2f}°" if onset_alt is not None else "Tidak Ditemukan"
+                            info_text = (f"Garis Dasar  : {baseline_mpsas:.2f} Mpsas\n"
+                                         f"Awan / Bulan : {cloud_pct:.1f}% / {'Aktif' if is_corrected else 'Pasif'}\n"
+                                         f"Fajar Sadiq  : {onset_str}")
+                            props = dict(boxstyle='round', facecolor='#F8F9FA', alpha=0.9, edgecolor='#1A3C40')
+                            ax.text(0.02, baseline_mpsas - 1.2, info_text, transform=ax.get_yaxis_transform(), fontsize=9, verticalalignment='bottom', bbox=props, family='monospace')
+                            ax.legend(loc="upper right")
+                            
+                            # === PROSES UPLOAD KE CLOUDINARY ===
+                            filename_plot = f"Plot_{site}_{date_str}_{method}".replace(" ", "_")
+                            filename_raw = f"Raw_{site}_{date_str}_{method}.dat".replace(" ", "_")
+                            
+                            status_text.text(f"Mencadangkan arsip ke Cloudinary: {filename_plot}...")
+                            plot_url = upload_plot_to_cloudinary(fig, filename_plot)
+                            raw_url = upload_raw_to_cloudinary(path, filename_raw) # Upload Raw File
+                            
+                            # === SIMPAN KE GOOGLE SHEETS ===
+                            rekap_data = {
+                                "Tanggal": date_str, "Lokasi": site, "Metode": method,
+                                "Bortle": lp_category.split("(")[-1].replace(")",""),
+                                "Awan_%": round(cloud_pct, 1), "Koreksi_Bulan": "Aktif" if is_corrected else "Pasif",
+                                "Garis_Dasar": round(baseline_mpsas, 2),
+                                "Fajar_Alt": round(onset_alt, 2) if onset_alt is not None else "",
+                                "Fajar_MSAS": round(onset_msas, 2) if onset_msas is not None else "",
+                                "Link_Grafik": plot_url,
+                                "Link_DataMentah": raw_url 
+                            }
+                            save_to_google_sheets(rekap_data)
+                            st.pyplot(fig)
+                            plt.close(fig)
+                        except Exception as e:
+                            st.error(f"Gagal memproses {os.path.basename(path)}: {str(e)}")
+                        progress_bar.progress((idx + 1) / len(file_paths))
+                    status_text.text("")
+                    st.success("🎉 Seluruh pengamatan berhasil diproses dan diarsipkan ke sistem Cloud.")
 
 with tab_histori:
     st.header("☁️ Basis Data Fotometri Terpusat")
@@ -456,14 +451,53 @@ with tab_histori:
 
 with tab_algoritma:
     st.header("📖 Metodologi & Landasan Matematis")
-    st.markdown("Aplikasi Kawakib Analyzer menerapkan rangkaian pipa pemrosesan data untuk menyaring gangguan dan mendeteksi fajar sadiq secara presisi.")
-    with st.expander("1. Pra-Pemrosesan", expanded=True):
-        st.markdown("* **Kalkulasi Ketinggian Matahari:** Menggunakan Julian Date dengan algoritma presisi.\n* **Smoothing:** Filter *Savitzky-Golay* (Orde 2, Jendela 31).\n* **Koreksi Bulan:** Kompensasi otomatis jika fase cahaya bulan > 5%.")
-    with st.expander("2. Metode SIGMAG-STAB"):
-        st.markdown("Menggunakan derivatif gradien dengan ambang batas statistik dinamis (Median Absolute Deviation).")
+    st.markdown("Aplikasi Kawakib Analyzer menerapkan rangkaian pipa pemrosesan data *(data pipeline)* secara otonom untuk menyaring gangguan (seperti awan dan cahaya bulan) serta mendeteksi transisi fajar sadiq dengan presisi tinggi berlandaskan metode numerik dan statistik astrofisika.")
+    
+    with st.expander("1. Pra-Pemrosesan Fotometri (Data Pre-processing)", expanded=True):
+        st.markdown("""
+        Tahap ini membersihkan data mentah dari instrumen SQM sebelum dianalisis:
+        * **Kalkulasi Ketinggian Matahari (Solar Altitude):** Waktu observasi (*Local Time* / UTC) dikonversi ke *Julian Date*. Aplikasi menggunakan parameter bujur dan lintang dari setiap file `.dat` untuk menghitung sudut depresi matahari secara presisi astronomis pada setiap detik pengamatan.
+        * **Smoothing Data (Penghalusan):** Menggunakan filter numerik **Savitzky-Golay** (Orde Polinomial 2, Jendela Dinamis 31 data). Filter ini dipilih karena jauh lebih unggul dari *Moving Average* biasa; ia mampu membuang *noise* acak tanpa merusak struktur puncak, lembah, maupun kecuraman asli dari kurva transisi fajar.
+        * **Koreksi Cahaya Bulan (Moonlight Compensation):** Menggunakan modul astronomi `ephem`. Jika bulan berada di atas ufuk (*altitude* > 0) dan fase iluminasinya di atas 5%, algoritma secara otomatis akan memodelkan intensitas cahaya bulan dan menguranginya dari total kecerlangan langit. Ini mencegah fajar "palsu" akibat polusi sinar rembulan.
+        """)
+        
+    with st.expander("2. Ekstraksi Titik Belok: Metode SIGMAG-STAB"):
+        st.markdown("""
+        **SIGMAG-STAB** (*Sigmoid Gradient - Stabilized*) adalah metode ekstraksi utama yang mendeteksi fajar berdasarkan turunan pertama (perubahan kemiringan) dari kurva kecerlangan langit.
+        
+        * Algoritma mencari momen di mana laju perubahan kecerlangan (gradien) langit menurun drastis dan stabil, menandakan cahaya matahari mulai mendominasi kegelapan malam.
+        * Alih-alih menggunakan Standar Deviasi biasa yang sangat rentan rusak oleh anomali (seperti awan melintas), metode ini menggunakan **MAD (Median Absolute Deviation)** untuk mengukur tingkat stabilitas *noise* langit malam.
+        * Fajar sadiq diidentifikasi saat gradien kurva secara konsisten melewati ambang batas toleransi dinamis:
+        """)
         st.latex(r"T = \mu - (k \cdot \sigma)")
-    with st.expander("3. Metode SIGMOID"):
-        st.markdown("Menggunakan *non-linear least squares fitting* untuk memodelkan transisi fajar.")
+        st.markdown("""
+        Di mana:
+        * $\mu$ = Nilai rata-rata gradien pada kondisi malam gelap total (Matahari < -20°).
+        * $\sigma$ = Nilai ketidakpastian (MAD) dari kemiringan kurva malam.
+        * $k$ = Faktor pengali dinamis adaptif yang menyesuaikan diri dengan resolusi alat (jeda waktu observasi).
+        """)
+        
+    with st.expander("3. Ekstraksi Titik Belok: Metode SIGMOID"):
+        st.markdown("""
+        Transisi terbitnya cahaya fajar secara alami membentuk pola Kurva-S atau Fungsi Logistik (Sigmoid). Metode ini bekerja dengan mencocokkan data observasi mentah ke dalam model fungsi matematika tersebut menggunakan teknik **Non-Linear Least Squares Fitting** dari pustaka SciPy.
+        
+        Persamaan matematis yang digunakan untuk memodelkan fajar:
+        """)
         st.latex(r"y = \frac{L}{1 + e^{-k(x - x_0)}} + b")
-    with st.expander("4. Deteksi Awan"):
-        st.markdown("Menggunakan standar deviasi bergulir untuk mendeteksi *spikes* data akibat awan melintas.")
+        st.markdown("""
+        Di mana:
+        * $y$ = Kecerlangan langit yang disimulasikan (Mpsas).
+        * $x$ = Sudut ketinggian (depresi) Matahari.
+        * $L$ = Amplitudo atau rentang transisi kecerlangan maksimum.
+        * $x_0$ = Titik tengah transisi fajar.
+        * $k$ = Laju kecuraman transisi cahaya.
+        * $b$ = Garis dasar (*baseline*) kecerlangan malam gelap gulita.
+        
+        Setelah model teoritis berhasil mencocokkan (*fitting*) data riil, titik fajar sadiq diekstrak secara analitik pada momen awal di mana kurva tersebut mulai menyimpang tajam dari batas garis dasar kegelapan ($b$).
+        """)
+        
+    with st.expander("4. Diagnostik Cuaca & Skala Bortle (Light Pollution)"):
+        st.markdown("""
+        * **Deteksi Awan (Cloud Cover):** Awan yang melintas di depan instrumen SQM akan memantulkan cahaya kota dan menciptakan "paku" (*spikes*) tajam pada kurva. Aplikasi memindai jendela waktu 60 menit di sekitar waktu fajar dan menghitung *Rolling Standard Deviation*. Jika fluktuasi melebihi ambang batas alamiah malam tersebut, titik tersebut ditandai dengan **warna merah** (Indikasi Awan).
+        * **Kategorisasi Polusi Cahaya (Bortle Scale Approximation):** Aplikasi mengekstrak nilai median kecerlangan saat malam benar-benar gelap (Sun < -20°). Nilai *baseline* ini kemudian dipetakan secara matematis ke dalam aproksimasi **Skala Bortle** untuk menentukan tingkat polusi cahaya di lokasi pengamatan (Misal: *Gelap*, *Agak Terang*, atau *Urban*).
+        """)
