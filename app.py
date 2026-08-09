@@ -32,83 +32,28 @@ KAWAKIB_LOGO_URL = "https://lh3.googleusercontent.com/d/1aoTDRdL-wS8EPytGGZ7dsJY
 GSHEETS_PERMANEN_URL = "https://docs.google.com/spreadsheets/d/1E4RpTfcPeQorW3r9cjpZ5cp31dpa7N_oXRZksRWdxG4/edit?gid=0#gid=0"
 SAMPLE_DATA_DRIVE_URL = "https://drive.google.com/drive/folders/1KHg8dRtkt9KrdDFZ8esbiuHQtKJvP2AN?usp=drive_link"
 
-if 'history_plot' not in st.session_state:
-    st.session_state.history_plot = []
-
 # --- INJEKSI CSS BERSIH & FIX DROPDOWN + IKON SIDEBAR ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,600;1,400&family=Inter:wght@300;400;600&display=swap');
-
-    .block-container {
-        padding-top: 2.9rem !important;
-        padding-bottom: 2rem !important;
-    }
-
-    [data-testid="stSidebar"] {
-        background-color: #1A3C40; 
-        padding-top: 1.5rem !important;
-    }
-    
-    /* Teks umum sidebar (putih) - KECUALI SPAN agar icon bawaan tidak rusak */
-    [data-testid="stSidebar"] p, 
-    [data-testid="stSidebar"] label, 
-    [data-testid="stSidebar"] h1, 
-    [data-testid="stSidebar"] h2, 
-    [data-testid="stSidebar"] h3,
-    [data-testid="stSidebar"] li {
-        color: #E8F1F2 !important;
-        font-family: 'Inter', sans-serif !important;
-    }
-    
-    /* KHUSUS SPAN: Ubah warnanya saja, JANGAN paksa ubah font-family nya */
-    [data-testid="stSidebar"] span:not([data-baseweb="select"] span) {
-        color: #E8F1F2 !important;
-    }
-    
-    /* KOTAK DROPDOWN / SELECTBOX DI SIDEBAR (Dipaksa Gelap & Kontras) */
-    [data-testid="stSidebar"] [data-baseweb="select"] {
-        background-color: #FFFFFF !important;
-        border-radius: 8px !important;
-    }
-    [data-testid="stSidebar"] [data-baseweb="select"] * {
-        color: #1A3C40 !important;
-        -webkit-text-fill-color: #1A3C40 !important;
-    }
-    
-    /* Tombol */
-    .stButton>button {
-        background-color: #1D9A9C;
-        color: #FFFFFF !important;
-        border-radius: 50px !important;
-        border: none;
-        padding: 0.5rem 1.5rem !important;
-        font-weight: 600;
-        transition: all 0.3s ease;
-    }
+    .block-container { padding-top: 2.9rem !important; padding-bottom: 2rem !important; }
+    [data-testid="stSidebar"] { background-color: #1A3C40; padding-top: 1.5rem !important; }
+    [data-testid="stSidebar"] p, [data-testid="stSidebar"] label, [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3, [data-testid="stSidebar"] li { color: #E8F1F2 !important; font-family: 'Inter', sans-serif !important; }
+    [data-testid="stSidebar"] span:not([data-baseweb="select"] span) { color: #E8F1F2 !important; }
+    [data-testid="stSidebar"] [data-baseweb="select"] { background-color: #FFFFFF !important; border-radius: 8px !important; }
+    [data-testid="stSidebar"] [data-baseweb="select"] * { color: #1A3C40 !important; -webkit-text-fill-color: #1A3C40 !important; }
+    .stButton>button { background-color: #1D9A9C; color: #FFFFFF !important; border-radius: 50px !important; border: none; padding: 0.5rem 1.5rem !important; font-weight: 600; transition: all 0.3s ease; }
     .stButton>button:hover { background-color: #25B8BA; }
-    
-    /* Link di Sidebar */
-    [data-testid="stSidebar"] a {
-        color: #79E0E2 !important;
-        font-weight: 600;
-        text-decoration: none;
-    }
+    [data-testid="stSidebar"] a { color: #79E0E2 !important; font-weight: 600; text-decoration: none; }
 </style>
 """, unsafe_allow_html=True)
 
 # =====================================================================
-# KONEKSI CLOUD (CLOUDINARY & GOOGLE SHEETS)
+# FUNGSI BACKEND (CLOUD & MATEMATIKA)
 # =====================================================================
 try:
-    cloudinary.config(
-        cloud_name = st.secrets["cloudinary"]["cloud_name"],
-        api_key = st.secrets["cloudinary"]["api_key"],
-        api_secret = st.secrets["cloudinary"]["api_secret"],
-        secure = True
-    )
-except Exception as e:
-    st.error(f"⚠️ Kredensial Cloudinary belum terbaca. (Error: {e})")
+    cloudinary.config(cloud_name=st.secrets["cloudinary"]["cloud_name"], api_key=st.secrets["cloudinary"]["api_key"], api_secret=st.secrets["cloudinary"]["api_secret"], secure=True)
+except: pass
 
 def upload_plot_to_cloudinary(fig, filename):
     try:
@@ -118,20 +63,13 @@ def upload_plot_to_cloudinary(fig, filename):
         response = cloudinary.uploader.upload(tmp_path, folder="kawakib_arsip", public_id=filename.replace(".png", ""))
         os.remove(tmp_path)
         return response.get("secure_url")
-    except Exception as e:
-        return ""
+    except: return ""
 
 def upload_raw_to_cloudinary(file_path, filename):
     try:
-        response = cloudinary.uploader.upload(
-            file_path, 
-            resource_type="raw", 
-            folder="kawakib_raw_data", 
-            public_id=filename
-        )
+        response = cloudinary.uploader.upload(file_path, resource_type="raw", folder="kawakib_raw_data", public_id=filename)
         return response.get("secure_url")
-    except Exception as e:
-        return ""
+    except: return ""
 
 def get_gsheets_client():
     try:
@@ -146,43 +84,31 @@ def save_to_google_sheets(data_dict):
     try:
         sheet = client.open_by_url(GSHEETS_PERMANEN_URL).sheet1
         existing_data = sheet.get_all_values()
-        
         if not existing_data:
             sheet.append_row(list(data_dict.keys()))
             sheet.append_row([str(data_dict.get(key, "")) for key in data_dict.keys()])
             return True
-            
         headers = existing_data[0]
         try:
             idx_tgl = headers.index("Tanggal")
             idx_lok = headers.index("Lokasi")
             idx_met = headers.index("Metode")
-        except ValueError:
+        except:
             sheet.append_row([str(data_dict.get(key, "")) for key in headers])
             return True
-
         row_to_update = None
         for i, row in enumerate(existing_data[1:], start=2):
             if len(row) > max(idx_tgl, idx_lok, idx_met):
-                if (row[idx_tgl] == str(data_dict["Tanggal"]) and 
-                    row[idx_lok] == str(data_dict["Lokasi"]) and 
-                    row[idx_met] == str(data_dict["Metode"])):
-                    row_to_update = i
-                    break
-        
+                if (row[idx_tgl] == str(data_dict["Tanggal"]) and row[idx_lok] == str(data_dict["Lokasi"]) and row[idx_met] == str(data_dict["Metode"])):
+                    row_to_update = i; break
         if row_to_update:
             cell_list = sheet.range(f'A{row_to_update}:{chr(65+len(headers)-1)}{row_to_update}')
             values = [str(data_dict.get(h, "")) for h in headers]
-            for cell, val in zip(cell_list, values):
-                cell.value = val
+            for cell, val in zip(cell_list, values): cell.value = val
             sheet.update_cells(cell_list)
-        else:
-            sheet.append_row([str(data_dict.get(key, "")) for key in headers])
-            
+        else: sheet.append_row([str(data_dict.get(key, "")) for key in headers])
         return True
-    except Exception as e: 
-        print(f"Gagal simpan ke GSheets: {e}")
-        return False
+    except: return False
 
 def load_data_from_google_sheets():
     client = get_gsheets_client()
@@ -192,9 +118,7 @@ def load_data_from_google_sheets():
         return pd.DataFrame(sheet.get_all_records())
     except: return pd.DataFrame()
 
-# =====================================================================
-# FUNGSI MATEMATIKA & ASTRONOMI
-# =====================================================================
+# [... FUNGSI MATEMATIKA & ASTRONOMI TETAP SAMA SEPERTI SEBELUMNYA ...]
 def read_header_and_find_data_start(path, max_header_lines=80):
     header, data_start = list(), None
     site, lat, lon, utc_offset = "Unknown Site", None, None, 7
@@ -237,8 +161,7 @@ def solar_alt(local_dt, lat, lon, utc_offset):
 def load_sqm_data(file_path):
     site, lat, lon, utc_offset, data_start = read_header_and_find_data_start(file_path)
     if lat is None or lon is None: lat, lon, utc_offset = -7.972, 114.425, 7
-    df = pd.read_csv(file_path, skiprows=data_start, sep=";", header=None,
-                   names=["utc","local","temp","cnt","hz","mpsas"], engine="python", on_bad_lines="skip")
+    df = pd.read_csv(file_path, skiprows=data_start, sep=";", header=None, names=["utc","local","temp","cnt","hz","mpsas"], engine="python", on_bad_lines="skip")
     df["local_dt"] = pd.to_datetime(df["local"], errors="coerce")
     df = df.dropna(subset=["local_dt","mpsas"])
     df["sun_alt"] = solar_alt(df["local_dt"], lat, lon, utc_offset)
@@ -307,7 +230,6 @@ def analyze_sigmag(am, bin_deg, n_consec):
     k_factor = 1.0 if sigma_used < 0.02 else (1.2 if sigma_used < 0.05 else 1.5)
     search_mask = xb >= -20.0
     xs, gs = xb[search_mask], grad_mean[search_mask]
-    
     onset_idx, consec_count = None, 0
     for i, flag in enumerate(gs < (mu_grad - k_factor * sigma_used)):
         if flag:
@@ -359,15 +281,11 @@ st.markdown(f"""
     </p>
 """, unsafe_allow_html=True)
 
-tab_analisis, tab_histori, tab_algoritma = st.tabs(["🚀 Analisis Data", "☁️ Basis Data Cloud", "📖 Metodologi & Algoritma"])
+# TABS BARU DENGAN DASHBOARD
+tab_analisis, tab_histori, tab_dashboard, tab_algoritma = st.tabs(["🚀 Analisis Data", "☁️ Basis Data Cloud", "📊 Dashboard Statistik", "📖 Metodologi & Algoritma"])
 
 with tab_analisis:
-    uploaded_files = st.file_uploader(
-        "Unggah File Data Observasi", 
-        accept_multiple_files=True, 
-        type=['dat', 'DAT', 'txt', 'TXT', 'zip', 'ZIP']
-    )
-    
+    uploaded_files = st.file_uploader("Unggah File Data Observasi", accept_multiple_files=True, type=['dat', 'DAT', 'txt', 'TXT', 'zip', 'ZIP'])
     if uploaded_files:
         if st.button("Mulai Kalkulasi Fotometri 🚀"):
             with tempfile.TemporaryDirectory() as temp_dir:
@@ -383,12 +301,9 @@ with tab_analisis:
                                     if file.endswith(('.dat', '.txt', '.DAT', '.TXT')): file_paths.append(os.path.join(root, file))
                     else: file_paths.append(file_path)
 
-                if not file_paths:
-                    st.error("❌ Tidak ada file .dat yang valid ditemukan di dalam arsip.")
+                if not file_paths: st.error("❌ Tidak ada file .dat yang valid ditemukan.")
                 else:
-                    # Ambil data existing GSheets sekali di awal untuk optimasi duplikat
                     df_existing = load_data_from_google_sheets()
-
                     progress_bar = st.progress(0)
                     status_text = st.empty()
                     for idx, path in enumerate(file_paths):
@@ -404,7 +319,7 @@ with tab_analisis:
                             base_series = am[am["sun_alt"] < -20]["mpsas_corrected"]
                             baseline_mpsas = base_series.median() if not base_series.empty else am["mpsas_corrected"].max()
                             lp_category, expected_alt = categorize_light_pollution(baseline_mpsas)
-                                    
+                            
                             fig, ax = plt.subplots(figsize=(10, 5))
                             ax.plot(am["sun_alt"], am["mpsas_corrected"], color="#1A3C40", alpha=0.8, linewidth=1.5, label="SQM Terkoreksi")
                             if is_corrected: ax.plot(am["sun_alt"], am["mpsas"], color="#808080", alpha=0.4, linestyle=":", label="SQM Mentah")
@@ -412,8 +327,7 @@ with tab_analisis:
                                 ax.axvline(onset_alt, color="#1D9A9C", linestyle="--", linewidth=2, label=f"Titik Belok ({onset_alt:.2f}°)")
                                 ax.scatter([onset_alt], [onset_msas], color="#1D9A9C", s=60, zorder=5)
                             cloudy_points = df_win[df_win['is_cloudy'] == True] if 'is_cloudy' in df_win.columns else pd.DataFrame()
-                            if not cloudy_points.empty:
-                                ax.scatter(cloudy_points["sun_alt"], cloudy_points["mpsas_corrected"], color="#d9534f", s=15, label="Indikasi Awan", zorder=4)
+                            if not cloudy_points.empty: ax.scatter(cloudy_points["sun_alt"], cloudy_points["mpsas_corrected"], color="#d9534f", s=15, label="Indikasi Awan", zorder=4)
                             ax.invert_yaxis()
                             ax.set_xlim(-30, -5)
                             ax.set_xlabel("Ketinggian Matahari (Derajat)", fontweight='bold')
@@ -421,137 +335,83 @@ with tab_analisis:
                             ax.set_title(f"{site} | {date_str} [{method}]", color="#1A3C40", fontweight='bold')
                             ax.grid(True, linestyle=":", alpha=0.6)
                             onset_str = f"{onset_alt:.2f}°" if onset_alt is not None else "Tidak Ditemukan"
-                            info_text = (f"Garis Dasar  : {baseline_mpsas:.2f} Mpsas\n"
+                            info_text = (f"Garis Dasar : {baseline_mpsas:.2f} Mpsas\n"
                                          f"Awan / Bulan : {cloud_pct:.1f}% / {'Aktif' if is_corrected else 'Pasif'}\n"
-                                         f"Fajar Sadiq  : {onset_str}")
+                                         f"Fajar Sadiq : {onset_str}")
                             props = dict(boxstyle='round', facecolor='#F8F9FA', alpha=0.9, edgecolor='#1A3C40')
                             ax.text(0.02, baseline_mpsas - 1.2, info_text, transform=ax.get_yaxis_transform(), fontsize=9, verticalalignment='bottom', bbox=props, family='monospace')
                             ax.legend(loc="upper right")
                             
-                            # === CEK DUPLIKAT SUPAYA TIDAK UPLOAD ULANG KE CLOUDINARY ===
-                            plot_url = ""
-                            raw_url = ""
+                            plot_url, raw_url = "", ""
                             if not df_existing.empty and {"Tanggal", "Lokasi", "Metode"}.issubset(df_existing.columns):
-                                match = df_existing[
-                                    (df_existing["Tanggal"].astype(str).str.strip() == str(date_str)) & 
-                                    (df_existing["Lokasi"].astype(str).str.strip() == str(site)) & 
-                                    (df_existing["Metode"].astype(str).str.strip() == str(method))
-                                ]
+                                match = df_existing[(df_existing["Tanggal"].astype(str).str.strip() == str(date_str)) & (df_existing["Lokasi"].astype(str).str.strip() == str(site)) & (df_existing["Metode"].astype(str).str.strip() == str(method))]
                                 if not match.empty:
                                     plot_url = str(match.iloc[0].get("Link_Grafik", "")).strip()
                                     raw_url = str(match.iloc[0].get("Link_DataMentah", "")).strip()
 
-                            filename_plot = f"Plot_{site}_{date_str}_{method}".replace(" ", "_")
-                            filename_raw = f"Raw_{site}_{date_str}_{method}.dat".replace(" ", "_")
-
-                            if plot_url and raw_url:
-                                status_text.text(f"Data duplikat terdeteksi: Menggunakan arsip Cloudinary yang sudah ada...")
+                            if plot_url and raw_url: status_text.text(f"Data duplikat terdeteksi: Menggunakan arsip lama...")
                             else:
-                                status_text.text(f"Mengunggah arsip baru ke Cloudinary: {filename_plot}...")
-                                plot_url = upload_plot_to_cloudinary(fig, filename_plot)
-                                raw_url = upload_raw_to_cloudinary(path, filename_raw)
+                                status_text.text(f"Mengunggah arsip baru ke Cloudinary...")
+                                plot_url = upload_plot_to_cloudinary(fig, f"Plot_{site}_{date_str}_{method}".replace(" ", "_"))
+                                raw_url = upload_raw_to_cloudinary(path, f"Raw_{site}_{date_str}_{method}.dat".replace(" ", "_"))
                             
-                            # === SIMPAN / UPDATE KE GOOGLE SHEETS (UPSERT) ===
-                            rekap_data = {
-                                "Tanggal": date_str, "Lokasi": site, "Metode": method,
-                                "Bortle": lp_category.split("(")[-1].replace(")",""),
+                            save_to_google_sheets({
+                                "Tanggal": date_str, "Lokasi": site, "Metode": method, "Bortle": lp_category.split("(")[-1].replace(")",""),
                                 "Awan_%": round(cloud_pct, 1), "Koreksi_Bulan": "Aktif" if is_corrected else "Pasif",
-                                "Garis_Dasar": round(baseline_mpsas, 2),
-                                "Fajar_Alt": round(onset_alt, 2) if onset_alt is not None else "",
+                                "Garis_Dasar": round(baseline_mpsas, 2), "Fajar_Alt": round(onset_alt, 2) if onset_alt is not None else "",
                                 "Fajar_MSAS": round(onset_msas, 2) if onset_msas is not None else "",
-                                "Link_Grafik": plot_url,
-                                "Link_DataMentah": raw_url 
-                            }
-                            save_to_google_sheets(rekap_data)
+                                "Link_Grafik": plot_url, "Link_DataMentah": raw_url 
+                            })
                             st.pyplot(fig)
                             plt.close(fig)
-                        except Exception as e:
-                            st.error(f"Gagal memproses {os.path.basename(path)}: {str(e)}")
+                        except Exception as e: st.error(f"Gagal memproses {os.path.basename(path)}: {str(e)}")
                         progress_bar.progress((idx + 1) / len(file_paths))
                     status_text.text("")
-                    st.success("🎉 Seluruh pengamatan berhasil diproses dan disinkronisasi ke Cloud.")
+                    st.success("🎉 Seluruh pengamatan berhasil diproses.")
 
 with tab_histori:
     st.header("☁️ Basis Data Fotometri Terpusat")
-    if st.button("🔄 Sinkronisasi Ulang Data"): st.rerun()
+    if st.button("🔄 Sinkronisasi"): st.rerun()
     df_cloud = load_data_from_google_sheets()
-    if df_cloud.empty:
-        st.info("Basis data kosong.")
+    if df_cloud.empty: st.info("Basis data kosong.")
     else:
-        df_cloud.columns = df_cloud.columns.astype(str).str.strip()
         df_display = df_cloud.drop(columns=["Link_Grafik", "Link_DataMentah"], errors="ignore")
         st.dataframe(df_display, use_container_width=True)
-        st.download_button(label="⬇️ Unduh CSV", data=df_display.to_csv(index=False).encode('utf-8'), file_name='Rekap_Kawakib_Cloud.csv', mime='text/csv')
-        st.divider()
+        st.download_button("⬇️ Unduh CSV", df_display.to_csv(index=False).encode('utf-8'), 'Rekap_Kawakib_Cloud.csv', 'text/csv')
+
+with tab_dashboard:
+    st.header("📊 Ringkasan Statistik Data")
+    df_stat = load_data_from_google_sheets()
+    if not df_stat.empty:
+        df_stat['Fajar_Alt'] = pd.to_numeric(df_stat['Fajar_Alt'], errors='coerce')
+        df_stat['Awan_%'] = pd.to_numeric(df_stat['Awan_%'], errors='coerce')
         
-        st.subheader("📈 Galeri & Akses Data Mentah")
-        if "Link_Grafik" not in df_cloud.columns:
-            st.warning("Data arsip belum tersedia.")
-        else:
-            cols = st.columns(2)
-            for idx, row in df_cloud.iterrows():
-                link_plot = str(row.get("Link_Grafik", "")).strip()
-                link_raw = str(row.get("Link_DataMentah", "")).strip()
-                
-                if link_plot and "res.cloudinary.com" in link_plot:
-                    with cols[idx % 2]:
-                        with st.expander(f"📍 {row.get('Lokasi', 'Unknown')} | 📅 {row.get('Tanggal', '')}"):
-                            st.image(link_plot, use_container_width=True)
-                            st.caption(f"**Metode**: {row.get('Metode', '')} | **Titik Fajar**: {row.get('Fajar_Alt', '')}°")
-                            if link_raw:
-                                st.markdown(f"[📥 Unduh Data Mentah (.dat)]({link_raw})")
-                            else:
-                                st.caption("*(Data mentah belum dicadangkan)*")
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Total Data", len(df_stat))
+        c2.metric("Rata-rata Fajar", f"{df_stat['Fajar_Alt'].mean():.2f}°")
+        c3.metric("Rata-rata Awan", f"{df_stat['Awan_%'].mean():.1f}%")
+        
+        st.divider()
+        st.subheader("Analisis Per Kriteria")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("**Berdasarkan Polusi Cahaya (Bortle)**")
+            st.bar_chart(df_stat.groupby('Bortle')['Fajar_Alt'].mean())
+        with col2:
+            st.markdown("**Berdasarkan Koreksi Bulan**")
+            st.bar_chart(df_stat.groupby('Koreksi_Bulan')['Fajar_Alt'].mean())
+    else: st.info("Belum ada data untuk dianalisis.")
 
 with tab_algoritma:
     st.header("📖 Metodologi & Landasan Matematis")
-    st.markdown("Aplikasi Kawakib Analyzer menerapkan rangkaian pipa pemrosesan data *(data pipeline)* secara otonom untuk menyaring gangguan (seperti awan dan cahaya bulan) serta mendeteksi transisi fajar sadiq dengan presisi tinggi berlandaskan metode numerik dan statistik astrofisika.")
-    
-    with st.expander("1. Pra-Pemrosesan Fotometri (Data Pre-processing)", expanded=True):
-        st.markdown("""
-        Tahap ini membersihkan data mentah dari instrumen SQM sebelum dianalisis:
-        * **Kalkulasi Ketinggian Matahari (Solar Altitude):** Waktu observasi (*Local Time* / UTC) dikonversi ke *Julian Date*. Aplikasi menggunakan parameter bujur dan lintang dari setiap file `.dat` untuk menghitung sudut depresi matahari secara presisi astronomis pada setiap detik pengamatan.
-        * **Smoothing Data (Penghalusan):** Menggunakan filter numerik **Savitzky-Golay** (Orde Polinomial 2, Jendela Dinamis 31 data). Filter ini dipilih karena jauh lebih unggul dari *Moving Average* biasa; ia mampu membuang *noise* acak tanpa merusak struktur puncak, lembah, maupun kecuraman asli dari kurva transisi fajar.
-        * **Koreksi Cahaya Bulan (Moonlight Compensation):** Menggunakan modul astronomi `ephem`. Jika bulan berada di atas ufuk (*altitude* > 0) dan fase iluminasinya di atas 5%, algoritma secara otomatis akan memodelkan intensitas cahaya bulan dan menguranginya dari total kecerlangan langit. Ini mencegah fajar "palsu" akibat polusi sinar rembulan.
-        """)
-        
-    with st.expander("2. Ekstraksi Titik Belok: Metode SIGMAG-STAB"):
-        st.markdown("""
-        **SIGMAG-STAB** (*Sigmoid Gradient - Stabilized*) adalah metode ekstraksi utama yang mendeteksi fajar berdasarkan turunan pertama (perubahan kemiringan) dari kurva kecerlangan langit.
-        
-        * Algoritma mencari momen di mana laju perubahan kecerlangan (gradien) langit menurun drastis dan stabil, menandakan cahaya matahari mulai mendominasi kegelapan malam.
-        * Alih-alih menggunakan Standar Deviasi biasa yang sangat rentan rusak oleh anomali (seperti awan melintas), metode ini menggunakan **MAD (Median Absolute Deviation)** untuk mengukur tingkat stabilitas *noise* langit malam.
-        * Fajar sadiq diidentifikasi saat gradien kurva secara konsisten melewati ambang batas toleransi dinamis:
-        """)
+    st.markdown("Aplikasi Kawakib Analyzer menerapkan pipa pemrosesan data otonom dengan metode statistik astrofisika tingkat lanjut.")
+    with st.expander("1. Pra-Pemrosesan Fotometri", expanded=True):
+        st.markdown("* **Kalkulasi Ketinggian Matahari:** Presisi astronomis dengan Julian Date.\n* **Smoothing:** Filter *Savitzky-Golay* (Orde 2, Jendela 31) untuk membuang noise tanpa merusak puncak kurva.\n* **Koreksi Cahaya Bulan:** Kompensasi otomatis jika fase cahaya bulan > 5%.")
+    with st.expander("2. Metode SIGMAG-STAB"):
+        st.markdown("Deteksi fajar berdasarkan turunan pertama kurva gradien dengan ambang batas dinamis berbasis **MAD (Median Absolute Deviation)**.")
         st.latex(r"T = \mu - (k \cdot \sigma)")
-        st.markdown("""
-        Di mana:
-        * $\mu$ = Nilai rata-rata gradien pada kondisi malam gelap total (Matahari < -20°).
-        * $\sigma$ = Nilai ketidakpastian (MAD) dari kemiringan kurva malam.
-        * $k$ = Faktor pengali dinamis adaptif yang menyesuaikan diri dengan resolusi alat (jeda waktu observasi).
-        """)
-        
-    with st.expander("3. Ekstraksi Titik Belok: Metode SIGMOID"):
-        st.markdown("""
-        Transisi terbitnya cahaya fajar secara alami membentuk pola Kurva-S atau Fungsi Logistik (Sigmoid). Metode ini bekerja dengan mencocokkan data observasi mentah ke dalam model fungsi matematika tersebut menggunakan teknik **Non-Linear Least Squares Fitting** dari pustaka SciPy.
-        
-        Persamaan matematis yang digunakan untuk memodelkan fajar:
-        """)
+    with st.expander("3. Metode SIGMOID"):
+        st.markdown("Fitting data ke fungsi logistik (Kurva-S) menggunakan teknik *Non-Linear Least Squares*.")
         st.latex(r"y = \frac{L}{1 + e^{-k(x - x_0)}} + b")
-        st.markdown("""
-        Di mana:
-        * $y$ = Kecerlangan langit yang disimulasikan (Mpsas).
-        * $x$ = Sudut ketinggian (depresi) Matahari.
-        * $L$ = Amplitudo atau rentang transisi kecerlangan maksimum.
-        * $x_0$ = Titik tengah transisi fajar.
-        * $k$ = Laju kecuraman transisi cahaya.
-        * $b$ = Garis dasar (*baseline*) kecerlangan malam gelap gulita.
-        
-        Setelah model teoritis berhasil mencocokkan (*fitting*) data riil, titik fajar sadiq diekstrak secara analitik pada momen awal di mana kurva tersebut mulai menyimpang tajam dari batas garis dasar kegelapan ($b$).
-        """)
-        
-    with st.expander("4. Diagnostik Cuaca & Skala Bortle (Light Pollution)"):
-        st.markdown("""
-        * **Deteksi Awan (Cloud Cover):** Awan yang melintas di depan instrumen SQM akan memantulkan cahaya kota dan menciptakan "paku" (*spikes*) tajam pada kurva. Aplikasi memindai jendela waktu 60 menit di sekitar waktu fajar dan menghitung *Rolling Standard Deviation*. Jika fluktuasi melebihi ambang batas alamiah malam tersebut, titik tersebut ditandai dengan **warna merah** (Indikasi Awan).
-        * **Kategorisasi Polusi Cahaya (Bortle Scale Approximation):** Aplikasi mengekstrak nilai median kecerlangan saat malam benar-benar gelap (Sun < -20°). Nilai *baseline* ini kemudian dipetakan secara matematis ke dalam aproksimasi **Skala Bortle** untuk menentukan tingkat polusi cahaya di lokasi pengamatan (Misal: *Gelap*, *Agak Terang*, atau *Urban*).
-        """)
+    with st.expander("4. Diagnostik Awan"):
+        st.markdown("Deteksi anomali pada kecerlangan langit menggunakan *Rolling Standard Deviation* (60 menit jendela waktu).")
