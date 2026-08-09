@@ -118,7 +118,9 @@ def load_data_from_google_sheets():
         return pd.DataFrame(sheet.get_all_records())
     except: return pd.DataFrame()
 
-# [... FUNGSI MATEMATIKA & ASTRONOMI TETAP SAMA SEPERTI SEBELUMNYA ...]
+# =====================================================================
+# FUNGSI MATEMATIKA & ASTRONOMI
+# =====================================================================
 def read_header_and_find_data_start(path, max_header_lines=80):
     header, data_start = list(), None
     site, lat, lon, utc_offset = "Unknown Site", None, None, 7
@@ -281,7 +283,7 @@ st.markdown(f"""
     </p>
 """, unsafe_allow_html=True)
 
-# TABS BARU DENGAN DASHBOARD
+# TABS DENGAN DASHBOARD
 tab_analisis, tab_histori, tab_dashboard, tab_algoritma = st.tabs(["🚀 Analisis Data", "☁️ Basis Data Cloud", "📊 Dashboard Statistik", "📖 Metodologi & Algoritma"])
 
 with tab_analisis:
@@ -320,6 +322,9 @@ with tab_analisis:
                             baseline_mpsas = base_series.median() if not base_series.empty else am["mpsas_corrected"].max()
                             lp_category, expected_alt = categorize_light_pollution(baseline_mpsas)
                             
+                            # EKSTRAKSI NAMA KOTA (Regex pemisah - atau ,)
+                            kota = re.split(r'[-,\|]', site)[-1].strip()
+                            
                             fig, ax = plt.subplots(figsize=(10, 5))
                             ax.plot(am["sun_alt"], am["mpsas_corrected"], color="#1A3C40", alpha=0.8, linewidth=1.5, label="SQM Terkoreksi")
                             if is_corrected: ax.plot(am["sun_alt"], am["mpsas"], color="#808080", alpha=0.4, linestyle=":", label="SQM Mentah")
@@ -355,8 +360,11 @@ with tab_analisis:
                                 plot_url = upload_plot_to_cloudinary(fig, f"Plot_{site}_{date_str}_{method}".replace(" ", "_"))
                                 raw_url = upload_raw_to_cloudinary(path, f"Raw_{site}_{date_str}_{method}.dat".replace(" ", "_"))
                             
+                            # MENYIMPAN KOTA DAN KOORDINAT KE SHEETS
                             save_to_google_sheets({
-                                "Tanggal": date_str, "Lokasi": site, "Metode": method, "Bortle": lp_category.split("(")[-1].replace(")",""),
+                                "Tanggal": date_str, "Kota": kota, "Lokasi": site, 
+                                "Lintang": lat, "Bujur": lon, 
+                                "Metode": method, "Bortle": lp_category.split("(")[-1].replace(")",""),
                                 "Awan_%": round(cloud_pct, 1), "Koreksi_Bulan": "Aktif" if is_corrected else "Pasif",
                                 "Garis_Dasar": round(baseline_mpsas, 2), "Fajar_Alt": round(onset_alt, 2) if onset_alt is not None else "",
                                 "Fajar_MSAS": round(onset_msas, 2) if onset_msas is not None else "",
@@ -382,24 +390,59 @@ with tab_histori:
 with tab_dashboard:
     st.header("📊 Ringkasan Statistik Data")
     df_stat = load_data_from_google_sheets()
+    
     if not df_stat.empty:
         df_stat['Fajar_Alt'] = pd.to_numeric(df_stat['Fajar_Alt'], errors='coerce')
         df_stat['Awan_%'] = pd.to_numeric(df_stat['Awan_%'], errors='coerce')
         
+        # Buat kolom Kota secara dinamis untuk data lama yang belum punya kolom Kota
+        if 'Kota' not in df_stat.columns and 'Lokasi' in df_stat.columns:
+            df_stat['Kota'] = df_stat['Lokasi'].apply(lambda x: re.split(r'[-,\|]', str(x))[-1].strip())
+            
         c1, c2, c3 = st.columns(3)
         c1.metric("Total Data", len(df_stat))
-        c2.metric("Rata-rata Fajar", f"{df_stat['Fajar_Alt'].mean():.2f}°")
+        c2.metric("Rata-rata Fajar Global", f"{df_stat['Fajar_Alt'].mean():.2f}°")
         c3.metric("Rata-rata Awan", f"{df_stat['Awan_%'].mean():.1f}%")
         
         st.divider()
-        st.subheader("Analisis Per Kriteria")
+        st.subheader("🌍 Analisis Spasial & Geografis (Berdasarkan Koordinat Kota)")
+        
+        # AGREGASI KOORDINAT & PETA
+        if 'Lintang' in df_stat.columns and 'Bujur' in df_stat.columns:
+            df_map = df_stat.dropna(subset=['Lintang', 'Bujur', 'Fajar_Alt']).copy()
+            if not df_map.empty:
+                df_map['lat'] = pd.to_numeric(df_map['Lintang'], errors='coerce')
+                df_map['lon'] = pd.to_numeric(df_map['Bujur'], errors='coerce')
+                
+                # Mengelompokkan (Grouping) berdasarkan Kota dan Titik Koordinat
+                df_map_agg = df_map.groupby(['Kota', 'lat', 'lon']).agg(
+                    Fajar_Rata2=('Fajar_Alt', 'mean'),
+                    Total_Observasi=('Fajar_Alt', 'count')
+                ).reset_index()
+                
+                st.markdown("**Peta Persebaran Titik Observasi Kawakib**")
+                st.map(df_map_agg[['lat', 'lon']], zoom=5, use_container_width=True)
+                
+                st.markdown("**Tabel Agregasi Data Spasial**")
+                df_tabel = df_map_agg.rename(columns={'lat': 'Lintang', 'lon': 'Bujur', 'Fajar_Rata2': 'Rata-rata Fajar (°)'})
+                st.dataframe(df_tabel.style.format({'Rata-rata Fajar (°)': '{:.2f}'}), use_container_width=True)
+        
+        st.markdown("**Perbandingan Rata-rata Kedalaman Fajar per Kota**")
+        df_loc = df_stat.groupby('Kota')['Fajar_Alt'].mean().dropna()
+        if not df_loc.empty:
+            st.bar_chart(df_loc)
+        else:
+            st.info("Data fajar yang valid belum tersedia untuk memuat grafik.")
+
+        st.divider()
+        st.subheader("Analisis Per Kriteria Lingkungan")
         col1, col2 = st.columns(2)
         with col1:
             st.markdown("**Berdasarkan Polusi Cahaya (Bortle)**")
-            st.bar_chart(df_stat.groupby('Bortle')['Fajar_Alt'].mean())
+            st.bar_chart(df_stat.groupby('Bortle')['Fajar_Alt'].mean().dropna())
         with col2:
             st.markdown("**Berdasarkan Koreksi Bulan**")
-            st.bar_chart(df_stat.groupby('Koreksi_Bulan')['Fajar_Alt'].mean())
+            st.bar_chart(df_stat.groupby('Koreksi_Bulan')['Fajar_Alt'].mean().dropna())
     else: st.info("Belum ada data untuk dianalisis.")
 
 with tab_algoritma:
@@ -413,5 +456,5 @@ with tab_algoritma:
     with st.expander("3. Metode SIGMOID"):
         st.markdown("Fitting data ke fungsi logistik (Kurva-S) menggunakan teknik *Non-Linear Least Squares*.")
         st.latex(r"y = \frac{L}{1 + e^{-k(x - x_0)}} + b")
-    with st.expander("4. Diagnostik Awan"):
-        st.markdown("Deteksi anomali pada kecerlangan langit menggunakan *Rolling Standard Deviation* (60 menit jendela waktu).")
+    with st.expander("4. Diagnostik Awan & Analisis Spasial"):
+        st.markdown("* **Deteksi Awan:** Deteksi anomali pada kecerlangan langit menggunakan *Rolling Standard Deviation* (60 menit jendela waktu).\n* **Analisis Spasial:** Ekstraksi otomatis koordinat Lintang/Bujur untuk memetakan korelasi elevasi dan geografis terhadap kedalaman sudut fajar antar kota.")
