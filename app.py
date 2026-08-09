@@ -35,7 +35,7 @@ SAMPLE_DATA_DRIVE_URL = "https://drive.google.com/drive/folders/1KHg8dRtkt9KrdDF
 if 'history_plot' not in st.session_state:
     st.session_state.history_plot = []
 
-# --- INJEKSI CSS BERSIH & FIX DROPDOWN ---
+# --- INJEKSI CSS BERSIH & FIX DROPDOWN + IKON SIDEBAR ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,600;1,400&family=Inter:wght@300;400;600&display=swap');
@@ -50,15 +50,20 @@ st.markdown("""
         padding-top: 1.5rem !important;
     }
     
-    /* Teks umum sidebar (putih) */
+    /* Teks umum sidebar (putih) - KECUALI SPAN agar icon bawaan tidak rusak */
     [data-testid="stSidebar"] p, 
-    [data-testid="stSidebar"] span:not([data-baseweb="select"] span), 
     [data-testid="stSidebar"] label, 
     [data-testid="stSidebar"] h1, 
     [data-testid="stSidebar"] h2, 
-    [data-testid="stSidebar"] h3 {
+    [data-testid="stSidebar"] h3,
+    [data-testid="stSidebar"] li {
         color: #E8F1F2 !important;
         font-family: 'Inter', sans-serif !important;
+    }
+    
+    /* KHUSUS SPAN: Ubah warnanya saja, JANGAN paksa ubah font-family nya */
+    [data-testid="stSidebar"] span:not([data-baseweb="select"] span) {
+        color: #E8F1F2 !important;
     }
     
     /* KOTAK DROPDOWN / SELECTBOX DI SIDEBAR (Dipaksa Gelap & Kontras) */
