@@ -86,10 +86,22 @@ def save_to_google_sheets(data_dict):
         sheet = client.open_by_url(GSHEETS_PERMANEN_URL).sheet1
         existing_data = sheet.get_all_values()
         if not existing_data:
-            sheet.append_row(list(data_dict.keys()))
-            sheet.append_row([str(data_dict.get(key, "")) for key in data_dict.keys()])
+            headers = list(data_dict.keys())
+            sheet.append_row(headers)
+            sheet.append_row([str(data_dict.get(key, "")) for key in headers])
             return True
+            
         headers = existing_data[0]
+        
+        new_headers_added = False
+        for key in data_dict.keys():
+            if key not in headers:
+                headers.append(key)
+                new_headers_added = True
+                
+        if new_headers_added:
+            sheet.update(range_name='A1', values=[headers])
+            
         try:
             idx_tgl = headers.index("Tanggal")
             idx_lok = headers.index("Lokasi")
@@ -97,19 +109,25 @@ def save_to_google_sheets(data_dict):
         except:
             sheet.append_row([str(data_dict.get(key, "")) for key in headers])
             return True
+            
         row_to_update = None
         for i, row in enumerate(existing_data[1:], start=2):
             if len(row) > max(idx_tgl, idx_lok, idx_met):
                 if (row[idx_tgl] == str(data_dict["Tanggal"]) and row[idx_lok] == str(data_dict["Lokasi"]) and row[idx_met] == str(data_dict["Metode"])):
                     row_to_update = i; break
+                    
+        values = [str(data_dict.get(h, "")) for h in headers]
         if row_to_update:
-            cell_list = sheet.range(f'A{row_to_update}:{chr(65+len(headers)-1)}{row_to_update}')
-            values = [str(data_dict.get(h, "")) for h in headers]
+            cell_range = f'A{row_to_update}:{chr(65 + len(headers) - 1)}{row_to_update}' if len(headers) <= 26 else f'A{row_to_update}'
+            cell_list = sheet.range(cell_range)
             for cell, val in zip(cell_list, values): cell.value = val
             sheet.update_cells(cell_list)
-        else: sheet.append_row([str(data_dict.get(key, "")) for key in headers])
+        else: 
+            sheet.append_row(values)
         return True
-    except: return False
+    except Exception as e:
+        print(f"Error saving to sheets: {e}")
+        return False
 
 def load_data_from_google_sheets():
     client = get_gsheets_client()
@@ -131,7 +149,6 @@ def sync_from_soof_drive():
     service = get_drive_service()
     downloaded_paths = []
     try:
-        # Langsung pindai semua file berformat .dat / .txt di seluruh folder yang dishare ke bot
         results = service.files().list(
             q="mimeType != 'application/vnd.google-apps.folder' and (name contains '.dat' or name contains '.DAT' or name contains '.txt') and trashed = false",
             fields="files(id, name)"
@@ -335,7 +352,8 @@ def process_and_save_data(file_paths, method, df_existing):
                     plot_url = str(match.iloc[0].get("Link_Grafik", "")).strip()
                     raw_url = str(match.iloc[0].get("Link_DataMentah", "")).strip()
 
-            if plot_url and raw_url: status_text.text(f"Data duplikat terdeteksi: Menggunakan arsip lama...")
+            if plot_url and raw_url: 
+                status_text.text(f"Data duplikat terdeteksi: Menggunakan arsip lama...")
             else:
                 status_text.text(f"Mengunggah arsip baru ke Cloudinary...")
                 plot_url = upload_plot_to_cloudinary(fig, f"Plot_{site}_{date_str}_{method}".replace(" ", "_"))
@@ -424,9 +442,9 @@ with tab_histori:
     df_cloud = load_data_from_google_sheets()
     if df_cloud.empty: st.info("Basis data kosong.")
     else:
-        df_display = df_cloud.drop(columns=["Link_Grafik", "Link_DataMentah"], errors="ignore")
-        st.dataframe(df_display, use_container_width=True)
-        st.download_button("⬇️ Unduh CSV", df_display.to_csv(index=False).encode('utf-8'), 'Rekap_Kawakib_Cloud.csv', 'text/csv')
+        # Menampilkan seluruh kolom termasuk Link Grafik & Data Mentah secara utuh
+        st.dataframe(df_cloud, use_container_width=True)
+        st.download_button("⬇️ Unduh CSV", df_cloud.to_csv(index=False).encode('utf-8'), 'Rekap_Kawakib_Cloud.csv', 'text/csv')
 
 with tab_dashboard:
     st.header("📊 Ringkasan Statistik Data")
