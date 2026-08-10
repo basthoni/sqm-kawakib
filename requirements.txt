@@ -8,3 +8,4 @@ gspread
 google-auth
 requests
 cloudinary
+google-api-python-client
