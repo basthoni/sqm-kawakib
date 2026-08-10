@@ -442,8 +442,15 @@ with tab_histori:
     df_cloud = load_data_from_google_sheets()
     if df_cloud.empty: st.info("Basis data kosong.")
     else:
-        # Menampilkan seluruh kolom termasuk Link Grafik & Data Mentah secara utuh
-        st.dataframe(df_cloud, use_container_width=True)
+        # PENGATURAN KOLOM AGAR URL BERUBAH MENJADI TOMBOL LINK KLIK-ABLE
+        st.dataframe(
+            df_cloud, 
+            use_container_width=True,
+            column_config={
+                "Link_Grafik": st.column_config.LinkColumn("Link Grafik", display_text="🖼️ Lihat Grafik Plot"),
+                "Link_DataMentah": st.column_config.LinkColumn("Link Data Mentah", display_text="📁 Buka File Mentah")
+            }
+        )
         st.download_button("⬇️ Unduh CSV", df_cloud.to_csv(index=False).encode('utf-8'), 'Rekap_Kawakib_Cloud.csv', 'text/csv')
 
 with tab_dashboard:
