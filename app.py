@@ -138,7 +138,7 @@ def load_data_from_google_sheets():
     except: return pd.DataFrame()
 
 # =====================================================================
-# FUNGSI INTEGRASI DRIVE (THE HARVESTER - DIRECT FILE SCAN)
+# FUNGSI INTEGRASI DRIVE (THE HARVESTER - WITH PAGINATION)
 # =====================================================================
 def get_drive_service():
     scopes = ['https://www.googleapis.com/auth/drive']
@@ -149,18 +149,26 @@ def sync_from_soof_drive():
     service = get_drive_service()
     downloaded_paths = []
     try:
-        results = service.files().list(
-            q="mimeType != 'application/vnd.google-apps.folder' and (name contains '.dat' or name contains '.DAT' or name contains '.txt') and trashed = false",
-            fields="files(id, name)"
-        ).execute()
-        files = results.get('files', [])
-        
-        for file in files:
-            file_path = os.path.join(tempfile.gettempdir(), file['name'])
-            request = service.files().get_media(fileId=file['id'])
-            with open(file_path, "wb") as f:
-                f.write(request.execute())
-            downloaded_paths.append(file_path)
+        page_token = None
+        while True:
+            results = service.files().list(
+                q="mimeType != 'application/vnd.google-apps.folder' and (name contains '.dat' or name contains '.DAT' or name contains '.txt') and trashed = false",
+                fields="nextPageToken, files(id, name)",
+                pageSize=1000,
+                pageToken=page_token
+            ).execute()
+            
+            files = results.get('files', [])
+            for file in files:
+                file_path = os.path.join(tempfile.gettempdir(), file['name'])
+                request = service.files().get_media(fileId=file['id'])
+                with open(file_path, "wb") as f:
+                    f.write(request.execute())
+                downloaded_paths.append(file_path)
+                
+            page_token = results.get('nextPageToken', None)
+            if page_token is None:
+                break
     except Exception as e:
         st.error(f"Error accessing Google Drive: {e}")
         
@@ -442,7 +450,6 @@ with tab_histori:
     df_cloud = load_data_from_google_sheets()
     if df_cloud.empty: st.info("Basis data kosong.")
     else:
-        # PENGATURAN KOLOM AGAR URL BERUBAH MENJADI TOMBOL LINK KLIK-ABLE
         st.dataframe(
             df_cloud, 
             use_container_width=True,
