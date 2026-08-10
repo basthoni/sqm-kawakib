@@ -120,7 +120,7 @@ def load_data_from_google_sheets():
     except: return pd.DataFrame()
 
 # =====================================================================
-# FUNGSI INTEGRASI DRIVE (THE HARVESTER)
+# FUNGSI INTEGRASI DRIVE (THE HARVESTER - DIRECT FILE SCAN)
 # =====================================================================
 def get_drive_service():
     scopes = ['https://www.googleapis.com/auth/drive']
@@ -129,34 +129,24 @@ def get_drive_service():
 
 def sync_from_soof_drive():
     service = get_drive_service()
-    parent_folder_id = st.secrets.get("drive_inbox_id", "")
-    if not parent_folder_id:
-        return []
-
-    folder_query = f"'{parent_folder_id}' in parents and mimeType='application/vnd.google-apps.folder' and trashed=false"
-    try:
-        results = service.files().list(q=folder_query, fields="files(id, name)").execute()
-        folders = results.get('files', [])
-    except Exception as e:
-        st.error(f"Error accessing Google Drive: {e}")
-        return []
-    
-    folders.append({'id': parent_folder_id, 'name': 'Root'})
     downloaded_paths = []
-    
-    for folder in folders:
-        folder_id = folder['id']
-        file_query = f"'{folder_id}' in parents and mimeType!='application/vnd.google-apps.folder' and trashed=false"
-        files = service.files().list(q=file_query, fields="files(id, name)").execute().get('files', [])
+    try:
+        # Langsung pindai semua file berformat .dat / .txt di seluruh folder yang dishare ke bot
+        results = service.files().list(
+            q="mimeType != 'application/vnd.google-apps.folder' and (name contains '.dat' or name contains '.DAT' or name contains '.txt') and trashed = false",
+            fields="files(id, name)"
+        ).execute()
+        files = results.get('files', [])
         
         for file in files:
-            if file['name'].lower().endswith(('.dat', '.txt')):
-                file_path = os.path.join(tempfile.gettempdir(), file['name'])
-                request = service.files().get_media(fileId=file['id'])
-                with open(file_path, "wb") as f:
-                    f.write(request.execute())
-                downloaded_paths.append(file_path)
-                
+            file_path = os.path.join(tempfile.gettempdir(), file['name'])
+            request = service.files().get_media(fileId=file['id'])
+            with open(file_path, "wb") as f:
+                f.write(request.execute())
+            downloaded_paths.append(file_path)
+    except Exception as e:
+        st.error(f"Error accessing Google Drive: {e}")
+        
     return downloaded_paths
 
 # =====================================================================
