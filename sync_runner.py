@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 from scipy.signal import savgol_filter
 from scipy.optimize import curve_fit
 import json
+import time  # <-- TAMBAHAN BARU: Untuk memberi jeda napas pada robot
 
 # Hindari error jika matplotlib dijalankan tanpa layar (headless server)
 import matplotlib
@@ -38,9 +39,9 @@ def get_gcp_creds():
 
 try:
     cloudinary.config(
-        cloud_name=os.environ.get("CLOUDINARY_CLOUD_NAME"),
-        api_key=os.environ.get("CLOUDINARY_API_KEY"),
-        api_secret=os.environ.get("CLOUDINARY_API_SECRET"),
+        cloud_name=os.environ.get("CLOUDINARY_CLOUD_NAME").strip() if os.environ.get("CLOUDINARY_CLOUD_NAME") else None,
+        api_key=os.environ.get("CLOUDINARY_API_KEY").strip() if os.environ.get("CLOUDINARY_API_KEY") else None,
+        api_secret=os.environ.get("CLOUDINARY_API_SECRET").strip() if os.environ.get("CLOUDINARY_API_SECRET") else None,
         secure=True
     )
 except Exception as e: 
@@ -120,6 +121,13 @@ def save_to_google_sheets(data_dict):
     except Exception as e:
         print(f"Error saving to sheets: {e}")
         return False
+
+def load_data_from_google_sheets():
+    try:
+        client = get_gsheets_client()
+        sheet = client.open_by_url(GSHEETS_PERMANEN_URL).sheet1
+        return pd.DataFrame(sheet.get_all_records())
+    except: return pd.DataFrame()
 
 def sync_from_soof_drive():
     print("Memulai koneksi ke Google Drive (Mode Robot)...")
@@ -284,18 +292,19 @@ def analyze_sigmag(am, bin_deg, n_consec):
 # EKSEKUSI UTAMA (MAIN LOOP)
 # ==========================================
 if __name__ == "__main__":
-    method = "SIGMAG-STAB" # Default robot menggunakan metode utama
+    method = "SIGMAG-STAB" 
     file_paths = sync_from_soof_drive()
     
     if not file_paths:
         print("Selesai: Tidak ada file yang ditemukan.")
     else:
+        df_existing = load_data_from_google_sheets()
+        
         for idx, path in enumerate(file_paths):
             print(f"[{idx+1}/{len(file_paths)}] Memproses: {os.path.basename(path)}")
             try:
                 am, site, lat, lon, utc_offset, date_str = load_sqm_data(path)
                 if am.empty: 
-                    print("--> Data kosong, skip.")
                     continue
                 
                 am, is_corrected = apply_moonlight_correction(am, lat, lon, utc_offset)
@@ -307,35 +316,44 @@ if __name__ == "__main__":
                 lp_category, _ = categorize_light_pollution(baseline_mpsas)
                 kota = re.split(r'[-,\|]', site)[-1].strip()
                 
-                print("--> Membuat grafik & upload ke Cloudinary...")
-                fig, ax = plt.subplots(figsize=(10, 5))
-                ax.plot(am["sun_alt"], am["mpsas_corrected"], color="#1A3C40", alpha=0.8, linewidth=1.5, label="SQM Terkoreksi")
-                if is_corrected: ax.plot(am["sun_alt"], am["mpsas"], color="#808080", alpha=0.4, linestyle=":", label="SQM Mentah")
-                if onset_alt is not None:
-                    ax.axvline(onset_alt, color="#1D9A9C", linestyle="--", linewidth=2, label=f"Titik Belok ({onset_alt:.2f}°)")
-                    ax.scatter([onset_alt], [onset_msas], color="#1D9A9C", s=60, zorder=5)
-                
-                cloudy_points = df_win[df_win['is_cloudy'] == True] if 'is_cloudy' in df_win.columns else pd.DataFrame()
-                if not cloudy_points.empty: ax.scatter(cloudy_points["sun_alt"], cloudy_points["mpsas_corrected"], color="#d9534f", s=15, label="Indikasi Awan", zorder=4)
-                
-                ax.invert_yaxis()
-                ax.set_xlim(-30, -5)
-                ax.set_xlabel("Ketinggian Matahari (Derajat)", fontweight='bold')
-                ax.set_ylabel("Kecerlangan Langit (Mpsas)", fontweight='bold')
-                ax.set_title(f"{site} | {date_str} [{method}]", color="#1A3C40", fontweight='bold')
-                ax.grid(True, linestyle=":", alpha=0.6)
-                
-                onset_str = f"{onset_alt:.2f}°" if onset_alt is not None else "Tidak Ditemukan"
-                info_text = (f"Garis Dasar : {baseline_mpsas:.2f} Mpsas\n"
-                             f"Awan / Bulan : {cloud_pct:.1f}% / {'Aktif' if is_corrected else 'Pasif'}\n"
-                             f"Fajar Sadiq : {onset_str}")
-                props = dict(boxstyle='round', facecolor='#F8F9FA', alpha=0.9, edgecolor='#1A3C40')
-                ax.text(0.02, baseline_mpsas - 1.2, info_text, transform=ax.get_yaxis_transform(), fontsize=9, verticalalignment='bottom', bbox=props, family='monospace')
-                ax.legend(loc="upper right")
-                
-                plot_url = upload_plot_to_cloudinary(fig, f"Plot_{site}_{date_str}_{method}".replace(" ", "_"))
-                raw_url = upload_raw_to_cloudinary(path, f"Raw_{site}_{date_str}_{method}.dat".replace(" ", "_"))
-                plt.close(fig)
+                plot_url, raw_url = "", ""
+                if not df_existing.empty and {"Tanggal", "Lokasi", "Metode"}.issubset(df_existing.columns):
+                    match = df_existing[(df_existing["Tanggal"].astype(str).str.strip() == str(date_str)) & (df_existing["Lokasi"].astype(str).str.strip() == str(site)) & (df_existing["Metode"].astype(str).str.strip() == str(method))]
+                    if not match.empty:
+                        plot_url = str(match.iloc[0].get("Link_Grafik", "")).strip()
+                        raw_url = str(match.iloc[0].get("Link_DataMentah", "")).strip()
+
+                if not plot_url or not raw_url:
+                    fig, ax = plt.subplots(figsize=(10, 5))
+                    ax.plot(am["sun_alt"], am["mpsas_corrected"], color="#1A3C40", alpha=0.8, linewidth=1.5, label="SQM Terkoreksi")
+                    if is_corrected: ax.plot(am["sun_alt"], am["mpsas"], color="#808080", alpha=0.4, linestyle=":", label="SQM Mentah")
+                    if onset_alt is not None:
+                        ax.axvline(onset_alt, color="#1D9A9C", linestyle="--", linewidth=2, label=f"Titik Belok ({onset_alt:.2f}°)")
+                        ax.scatter([onset_alt], [onset_msas], color="#1D9A9C", s=60, zorder=5)
+                    
+                    cloudy_points = df_win[df_win['is_cloudy'] == True] if 'is_cloudy' in df_win.columns else pd.DataFrame()
+                    if not cloudy_points.empty: ax.scatter(cloudy_points["sun_alt"], cloudy_points["mpsas_corrected"], color="#d9534f", s=15, label="Indikasi Awan", zorder=4)
+                    
+                    ax.invert_yaxis()
+                    ax.set_xlim(-30, -5)
+                    ax.set_xlabel("Ketinggian Matahari (Derajat)", fontweight='bold')
+                    ax.set_ylabel("Kecerlangan Langit (Mpsas)", fontweight='bold')
+                    ax.set_title(f"{site} | {date_str} [{method}]", color="#1A3C40", fontweight='bold')
+                    ax.grid(True, linestyle=":", alpha=0.6)
+                    
+                    onset_str = f"{onset_alt:.2f}°" if onset_alt is not None else "Tidak Ditemukan"
+                    info_text = (f"Garis Dasar : {baseline_mpsas:.2f} Mpsas\n"
+                                 f"Awan / Bulan : {cloud_pct:.1f}% / {'Aktif' if is_corrected else 'Pasif'}\n"
+                                 f"Fajar Sadiq : {onset_str}")
+                    props = dict(boxstyle='round', facecolor='#F8F9FA', alpha=0.9, edgecolor='#1A3C40')
+                    ax.text(0.02, baseline_mpsas - 1.2, info_text, transform=ax.get_yaxis_transform(), fontsize=9, verticalalignment='bottom', bbox=props, family='monospace')
+                    ax.legend(loc="upper right")
+                    
+                    if not plot_url:
+                        plot_url = upload_plot_to_cloudinary(fig, f"Plot_{site}_{date_str}_{method}".replace(" ", "_"))
+                    if not raw_url:
+                        raw_url = upload_raw_to_cloudinary(path, f"Raw_{site}_{date_str}_{method}.dat".replace(" ", "_"))
+                    plt.close(fig)
                 
                 # Simpan Hasilnya ke Google Sheets
                 save_to_google_sheets({
@@ -348,8 +366,13 @@ if __name__ == "__main__":
                     "Link_Grafik": plot_url, "Link_DataMentah": raw_url 
                 })
                 
+                # JEDA NAPAS ROBOT AGAR TIDAK KENA ERROR 429 GOOGLE SHEETS
+                print("--> Istirahat 3 detik agar tidak diblokir Google...")
+                time.sleep(3) 
+                
             except Exception as e:
                 print(f"--> [GAGAL] Error saat memproses {os.path.basename(path)}: {e}")
+                time.sleep(3) 
 
     print("=========================================")
     print("SINKRONISASI OTOMATIS SELESAI DENGAN SUKSES!")
