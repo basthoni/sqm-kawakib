@@ -7,7 +7,8 @@ import matplotlib.pyplot as plt
 from scipy.signal import savgol_filter
 from scipy.optimize import curve_fit
 import json
-import time  # <-- TAMBAHAN BARU: Untuk memberi jeda napas pada robot
+import time
+import urllib.request
 
 # Hindari error jika matplotlib dijalankan tanpa layar (headless server)
 import matplotlib
@@ -163,6 +164,32 @@ def sync_from_soof_drive():
         
     return downloaded_paths
 
+# =====================================================================
+# INTEGRASI API SATELIT CUACA (OPEN-METEO)
+# =====================================================================
+def get_satellite_cloud_cover(lat, lon, date_str):
+    try:
+        url = f"https://archive-api.open-meteo.com/v1/archive?latitude={lat}&longitude={lon}&start_date={date_str}&end_date={date_str}&hourly=cloudcover&timezone=auto"
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=5) as response:
+            data = json.loads(response.read())
+            clouds = data.get('hourly', {}).get('cloudcover', [])
+            valid = [c for c in clouds[3:6] if c is not None]
+            if valid: return round(sum(valid)/len(valid), 1)
+    except: pass
+    
+    try:
+        url2 = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&start_date={date_str}&end_date={date_str}&hourly=cloudcover&timezone=auto"
+        req2 = urllib.request.Request(url2, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req2, timeout=5) as response:
+            data = json.loads(response.read())
+            clouds = data.get('hourly', {}).get('cloudcover', [])
+            valid = [c for c in clouds[3:6] if c is not None]
+            if valid: return round(sum(valid)/len(valid), 1)
+    except: pass
+        
+    return None
+
 # ==========================================
 # FUNGSI ASTRONOMI 
 # ==========================================
@@ -288,6 +315,19 @@ def analyze_sigmag(am, bin_deg, n_consec):
         return alt, float(np.interp(alt, am["sun_alt"], am["mpsas_corrected"]))
     return None, None
 
+def analyze_sigmoid(am):
+    def sigmoid(x, L, x0, k, b): return L / (1 + np.exp(-k * (x - x0))) + b
+    am["mpsas_smooth"] = savgol_filter(am["mpsas_corrected"], window_length=min(31, len(am)|1), polyorder=2)
+    x_data, y_data = am["sun_alt"].values, am["mpsas_smooth"].values
+    try:
+        popt, _ = curve_fit(sigmoid, x_data, y_data, p0=[y_data.min() - y_data.max(), -15.0, 1.0, y_data.max()], maxfev=5000)
+        x_eval = np.linspace(-30, -5, 500)
+        y_eval = sigmoid(x_eval, *popt)
+        onset_idx = np.argmax(y_eval < (popt[3] - 0.15))
+        if onset_idx == 0: return None, None
+        return x_eval[onset_idx], float(np.interp(x_eval[onset_idx], am["sun_alt"], am["mpsas_corrected"]))
+    except: return None, None
+
 # ==========================================
 # EKSEKUSI UTAMA (MAIN LOOP)
 # ==========================================
@@ -309,8 +349,15 @@ if __name__ == "__main__":
                 
                 am, is_corrected = apply_moonlight_correction(am, lat, lon, utc_offset)
                 bin_deg, n_consec = get_dynamic_params(am)
-                onset_alt, onset_msas = analyze_sigmag(am, bin_deg, n_consec)
+                
+                if method == "SIGMAG-STAB":
+                    onset_alt, onset_msas = analyze_sigmag(am, bin_deg, n_consec)
+                else:
+                    onset_alt, onset_msas = analyze_sigmoid(am)
+                
                 cloud_pct, df_win = analyze_cloud_cover(am, onset_alt)
+                sat_cloud_pct = get_satellite_cloud_cover(lat, lon, date_str) # CEK KE SATELIT
+                
                 base_series = am[am["sun_alt"] < -20]["mpsas_corrected"]
                 baseline_mpsas = base_series.median() if not base_series.empty else am["mpsas_corrected"].max()
                 lp_category, _ = categorize_light_pollution(baseline_mpsas)
@@ -332,7 +379,7 @@ if __name__ == "__main__":
                         ax.scatter([onset_alt], [onset_msas], color="#1D9A9C", s=60, zorder=5)
                     
                     cloudy_points = df_win[df_win['is_cloudy'] == True] if 'is_cloudy' in df_win.columns else pd.DataFrame()
-                    if not cloudy_points.empty: ax.scatter(cloudy_points["sun_alt"], cloudy_points["mpsas_corrected"], color="#d9534f", s=15, label="Indikasi Awan", zorder=4)
+                    if not cloudy_points.empty: ax.scatter(cloudy_points["sun_alt"], cloudy_points["mpsas_corrected"], color="#d9534f", s=15, label="Indikasi Awan (SQM)", zorder=4)
                     
                     ax.invert_yaxis()
                     ax.set_xlim(-30, -5)
@@ -342,8 +389,11 @@ if __name__ == "__main__":
                     ax.grid(True, linestyle=":", alpha=0.6)
                     
                     onset_str = f"{onset_alt:.2f}°" if onset_alt is not None else "Tidak Ditemukan"
+                    sat_str = f"{sat_cloud_pct:.1f}%" if sat_cloud_pct is not None else "N/A"
+                    
                     info_text = (f"Garis Dasar : {baseline_mpsas:.2f} Mpsas\n"
-                                 f"Awan / Bulan : {cloud_pct:.1f}% / {'Aktif' if is_corrected else 'Pasif'}\n"
+                                 f"Awan SQM/Sat: {cloud_pct:.1f}% / {sat_str}\n"
+                                 f"Fase Bulan  : {'Aktif' if is_corrected else 'Pasif'}\n"
                                  f"Fajar Sadiq : {onset_str}")
                     props = dict(boxstyle='round', facecolor='#F8F9FA', alpha=0.9, edgecolor='#1A3C40')
                     ax.text(0.02, baseline_mpsas - 1.2, info_text, transform=ax.get_yaxis_transform(), fontsize=9, verticalalignment='bottom', bbox=props, family='monospace')
@@ -360,7 +410,9 @@ if __name__ == "__main__":
                     "Tanggal": date_str, "Kota": kota, "Lokasi": site, 
                     "Lintang": lat, "Bujur": lon, 
                     "Metode": method, "Bortle": lp_category.split("(")[-1].replace(")",""),
-                    "Awan_%": round(cloud_pct, 1), "Koreksi_Bulan": "Aktif" if is_corrected else "Pasif",
+                    "Awan_%": round(cloud_pct, 1), 
+                    "Awan_Satelit_%": sat_cloud_pct if sat_cloud_pct is not None else "",
+                    "Koreksi_Bulan": "Aktif" if is_corrected else "Pasif",
                     "Garis_Dasar": round(baseline_mpsas, 2), "Fajar_Alt": round(onset_alt, 2) if onset_alt is not None else "",
                     "Fajar_MSAS": round(onset_msas, 2) if onset_msas is not None else "",
                     "Link_Grafik": plot_url, "Link_DataMentah": raw_url 
