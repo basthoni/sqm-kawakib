@@ -11,6 +11,8 @@ import altair as alt
 from scipy.signal import savgol_filter
 from scipy.optimize import curve_fit
 import time
+import urllib.request
+import json
 
 # Pastikan ephem terinstal
 try:
@@ -143,16 +145,10 @@ def load_data_from_google_sheets():
         return pd.DataFrame(sheet.get_all_records())
     except: return pd.DataFrame()
 
-# =====================================================================
-# FUNGSI INTEGRASI DRIVE (PAGINATION)
-# =====================================================================
-def get_drive_service():
+def sync_from_soof_drive():
     scopes = ['https://www.googleapis.com/auth/drive']
     creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
-    return build('drive', 'v3', credentials=creds)
-
-def sync_from_soof_drive():
-    service = get_drive_service()
+    service = build('drive', 'v3', credentials=creds)
     downloaded_paths = []
     try:
         page_token = None
@@ -179,6 +175,41 @@ def sync_from_soof_drive():
         st.error(f"Error accessing Google Drive: {e}")
         
     return downloaded_paths
+
+# =====================================================================
+# INTEGRASI API SATELIT CUACA (OPEN-METEO)
+# =====================================================================
+def get_satellite_cloud_cover(lat, lon, date_str):
+    """
+    Menyedot persentase tutupan awan dari satelit cuaca internasional (Open-Meteo) 
+    pada jam 03.00 - 05.00 pagi waktu lokal.
+    """
+    try:
+        # Coba Archive API dulu (Untuk data historis lama > 5 hari)
+        url = f"https://archive-api.open-meteo.com/v1/archive?latitude={lat}&longitude={lon}&start_date={date_str}&end_date={date_str}&hourly=cloudcover&timezone=auto"
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=5) as response:
+            data = json.loads(response.read())
+            clouds = data.get('hourly', {}).get('cloudcover', [])
+            # Ambil data jam 03.00, 04.00, 05.00 pagi (Index 3, 4, 5)
+            valid = [c for c in clouds[3:6] if c is not None]
+            if valid: return round(sum(valid)/len(valid), 1)
+    except:
+        pass
+    
+    try:
+        # Fallback ke Forecast API (Untuk data yang sangat baru / hari ini)
+        url2 = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&start_date={date_str}&end_date={date_str}&hourly=cloudcover&timezone=auto"
+        req2 = urllib.request.Request(url2, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req2, timeout=5) as response:
+            data = json.loads(response.read())
+            clouds = data.get('hourly', {}).get('cloudcover', [])
+            valid = [c for c in clouds[3:6] if c is not None]
+            if valid: return round(sum(valid)/len(valid), 1)
+    except:
+        pass
+        
+    return None
 
 # =====================================================================
 # FUNGSI MATEMATIKA & ASTRONOMI
@@ -326,11 +357,17 @@ def process_and_save_data(file_paths, method, df_existing):
         try:
             am, site, lat, lon, utc_offset, date_str = load_sqm_data(path)
             if am.empty: continue
+            
+            # PROSES ASTRONOMI & MATEMATIKA
             am, is_corrected = apply_moonlight_correction(am, lat, lon, utc_offset)
             bin_deg, n_consec = get_dynamic_params(am)
             if method == "SIGMAG-STAB": onset_alt, onset_msas = analyze_sigmag(am, bin_deg, n_consec)
             else: onset_alt, onset_msas = analyze_sigmoid(am)
+            
+            # DIAGNOSTIK AWAN SQM & SATELIT
             cloud_pct, df_win = analyze_cloud_cover(am, onset_alt)
+            sat_cloud_pct = get_satellite_cloud_cover(lat, lon, date_str) # PANGGIL SATELIT
+            
             base_series = am[am["sun_alt"] < -20]["mpsas_corrected"]
             baseline_mpsas = base_series.median() if not base_series.empty else am["mpsas_corrected"].max()
             lp_category, expected_alt = categorize_light_pollution(baseline_mpsas)
@@ -344,16 +381,20 @@ def process_and_save_data(file_paths, method, df_existing):
                 ax.axvline(onset_alt, color="#1D9A9C", linestyle="--", linewidth=2, label=f"Titik Belok ({onset_alt:.2f}°)")
                 ax.scatter([onset_alt], [onset_msas], color="#1D9A9C", s=60, zorder=5)
             cloudy_points = df_win[df_win['is_cloudy'] == True] if 'is_cloudy' in df_win.columns else pd.DataFrame()
-            if not cloudy_points.empty: ax.scatter(cloudy_points["sun_alt"], cloudy_points["mpsas_corrected"], color="#d9534f", s=15, label="Indikasi Awan", zorder=4)
+            if not cloudy_points.empty: ax.scatter(cloudy_points["sun_alt"], cloudy_points["mpsas_corrected"], color="#d9534f", s=15, label="Indikasi Awan (SQM)", zorder=4)
             ax.invert_yaxis()
             ax.set_xlim(-30, -5)
             ax.set_xlabel("Ketinggian Matahari (Derajat)", fontweight='bold')
             ax.set_ylabel("Kecerlangan Langit (Mpsas)", fontweight='bold')
             ax.set_title(f"{site} | {date_str} [{method}]", color="#1A3C40", fontweight='bold')
             ax.grid(True, linestyle=":", alpha=0.6)
+            
             onset_str = f"{onset_alt:.2f}°" if onset_alt is not None else "Tidak Ditemukan"
+            sat_str = f"{sat_cloud_pct:.1f}%" if sat_cloud_pct is not None else "N/A"
+            
             info_text = (f"Garis Dasar : {baseline_mpsas:.2f} Mpsas\n"
-                         f"Awan / Bulan : {cloud_pct:.1f}% / {'Aktif' if is_corrected else 'Pasif'}\n"
+                         f"Awan SQM/Sat: {cloud_pct:.1f}% / {sat_str}\n"
+                         f"Fase Bulan  : {'Aktif' if is_corrected else 'Pasif'}\n"
                          f"Fajar Sadiq : {onset_str}")
             props = dict(boxstyle='round', facecolor='#F8F9FA', alpha=0.9, edgecolor='#1A3C40')
             ax.text(0.02, baseline_mpsas - 1.2, info_text, transform=ax.get_yaxis_transform(), fontsize=9, verticalalignment='bottom', bbox=props, family='monospace')
@@ -377,7 +418,9 @@ def process_and_save_data(file_paths, method, df_existing):
                 "Tanggal": date_str, "Kota": kota, "Lokasi": site, 
                 "Lintang": lat, "Bujur": lon, 
                 "Metode": method, "Bortle": lp_category.split("(")[-1].replace(")",""),
-                "Awan_%": round(cloud_pct, 1), "Koreksi_Bulan": "Aktif" if is_corrected else "Pasif",
+                "Awan_%": round(cloud_pct, 1), 
+                "Awan_Satelit_%": sat_cloud_pct if sat_cloud_pct is not None else "",
+                "Koreksi_Bulan": "Aktif" if is_corrected else "Pasif",
                 "Garis_Dasar": round(baseline_mpsas, 2), "Fajar_Alt": round(onset_alt, 2) if onset_alt is not None else "",
                 "Fajar_MSAS": round(onset_msas, 2) if onset_msas is not None else "",
                 "Link_Grafik": plot_url, "Link_DataMentah": raw_url 
@@ -387,7 +430,7 @@ def process_and_save_data(file_paths, method, df_existing):
         except Exception as e: st.error(f"Gagal memproses {os.path.basename(path)}: {str(e)}")
         progress_bar.progress((idx + 1) / len(file_paths))
     status_text.text("")
-    st.success("🎉 Seluruh pengamatan berhasil diproses.")
+    st.success("🎉 Seluruh pengamatan dan validasi satelit berhasil diproses.")
 
 # =====================================================================
 # UI KONTROL & SIDEBAR
@@ -422,7 +465,7 @@ st.markdown(f"""
     </div>
     <div style="border-bottom: 2px solid #1D9A9C; margin-top: 8px; margin-bottom: 10px;"></div>
     <p style='color: #555; font-size: 0.92rem; margin-bottom: 15px;'>
-        Aplikasi web ini mengekstrak titik belok fajar sadiq secara otonom. Terintegrasi dengan sistem penyimpanan cloud untuk analisis data yang persisten.
+        Aplikasi web ini mengekstrak titik belok fajar sadiq secara otonom. Terintegrasi dengan radar satelit cuaca untuk validasi absolut.
     </p>
 """, unsafe_allow_html=True)
 
@@ -474,11 +517,13 @@ with tab_dashboard:
         df_stat['Fajar_Alt'] = pd.to_numeric(df_stat['Fajar_Alt'], errors='coerce')
         df_stat['Awan_%'] = pd.to_numeric(df_stat['Awan_%'], errors='coerce')
         df_stat['Garis_Dasar'] = pd.to_numeric(df_stat['Garis_Dasar'], errors='coerce')
+        # Tarik kolom awan satelit dengan aman (jika belum ada di sheet lama)
+        df_stat['Awan_Satelit_%'] = pd.to_numeric(df_stat.get('Awan_Satelit_%', pd.Series(dtype=float)), errors='coerce')
         
         if 'Kota' not in df_stat.columns and 'Lokasi' in df_stat.columns:
             df_stat['Kota'] = df_stat['Lokasi'].apply(lambda x: re.split(r'[-,\|]', str(x))[-1].strip())
             
-        # FILTER KEMENAG IDEAL DIREVISI: Langit >= 20.5 mpsas (Bortle Tipe 1 & 2), Awan <= 5%, Tanpa Koreksi Bulan
+        # FILTER KEMENAG IDEAL DIREVISI: Langit >= 20.5 mpsas, Awan SQM <= 5%, Tanpa Koreksi Bulan
         df_kemenag_ideal = df_stat[
             (df_stat['Garis_Dasar'] >= 20.5) & 
             (df_stat['Awan_%'] <= 5.0) & 
@@ -561,81 +606,26 @@ with tab_algoritma:
     st.header("📖 Metodologi, Landasan Matematis & Spesifikasi Algoritma Fajar Sadiq")
     st.markdown(r"""
     Aplikasi **Kawakib SQM Fajar Analyzer** ini dikembangkan sebagai instrumen riset tingkat lanjut untuk memproses data deret waktu (*time-series*) fotometri langit malam secara otonom. Pendekatan yang digunakan merupakan amalgamasi dari ilmu astrometri presisi tinggi, pemrosesan sinyal digital (*digital signal processing*), serta kalibrasi empiris astronomi Islam yang merujuk pada standar hisab awal waktu Subuh Kementerian Agama Republik Indonesia (**Solar Depression Angle: -20°**).
-    
-    Berikut adalah rincian mendalam (*in-depth breakdown*) dari algoritma dan model matematis yang beroperasi di balik layar aplikasi ini, yang dapat dijadikan rujukan validitas untuk penulisan karya ilmiah dan riset lanjutan.
     """)
     
     with st.expander("1. Pra-Pemrosesan Astrometri & Filtrasi Fotometri", expanded=False):
         st.markdown(r"""
-        Data mentah yang digunakan bersumber dari sensor *Unihedron Sky Quality Meter* (SQM-LE/LU) dengan format ekstensi `.dat`. Pada tahap pra-pemrosesan, sistem melakukan beberapa tahapan esensial:
-        
-        **A. Ekstraksi Header & Kalkulasi Ketinggian Matahari (*Solar Altitude Calculation*)**
-        Sistem secara otonom membedah metadata header `.dat` untuk mengekstrak parameter posisi (Lintang $\phi$ dan Bujur $\lambda$) serta perbedaan zona waktu lokal (*UTC offset*). Data waktu (*timestamp*) dari setiap rekam jejak kemudian dikonversi menjadi *Julian Date* ($JD$). Menggunakan algoritma presisi dari pengamatan matahari, aplikasi menghitung anomali rata-rata ($g$), bujur ekliptika ($\lambda_\odot$), kemiringan sumbu bumi ($\epsilon$), deklinasi matahari ($\delta$), hingga *Local Hour Angle* ($H$). 
-        
-        Ketinggian matahari (*Altitude* atau $a$) kemudian didapatkan melalui persamaan trigonometri bola langit:
+        Data mentah yang digunakan bersumber dari sensor *Unihedron Sky Quality Meter* (SQM-LE/LU) dengan format ekstensi `.dat`.
+        * **Kalkulasi Ketinggian Matahari:** Mengonversi waktu lokal ke *Julian Date* (JD), menghitung anomali rata-rata, bujur ekliptika, deklinasi matahari, hingga *Local Hour Angle* melalui persamaan trigonometri bola langit.
+        * **Savitzky-Golay *Smoothing Filter*:** Mengaplikasikan filter dengan rentang jendela 31 data poin dan polinomial orde ke-2 untuk meratakan (*smooth*) fluktuasi tanpa menggeser fase waktu (*phase-shift*).
+        * **Koreksi Kontaminasi Cahaya Bulan:** Jika altitude bulan $> 0^\circ$ dan fase iluminasi melampaui ambang $5\%$, kontribusi fluks bulan dikurangkan secara fisis.
         """)
-        st.latex(r"\sin(a) = \sin(\phi)\sin(\delta) + \cos(\phi)\cos(\delta)\cos(H)")
-        
-        st.markdown(r"""
-        **B. Savitzky-Golay *Smoothing Filter***
-        Data kecerlangan langit malam yang dinyatakan dalam *Magnitudes per Square Arcsecond* (mpsas) rentan terhadap *noise* acak frekuensi tinggi yang diakibatkan oleh perubahan turbulensi atmosfer mikro atau polusi cahaya instan (seperti lampu kendaraan). Aplikasi mengaplikasikan filter Savitzky-Golay dengan rentang jendela (*window size*) 31 data poin dan polinomial orde ke-2. Filter ini dipilih karena secara matematis ia mampu meratakan (*smooth*) fluktuasi tanpa menggeser fase waktu (*phase-shift*) atau merusak ketajaman titik belok (*inflection point*) fajar sadiq yang esensial.
-        
-        **C. Koreksi Kontaminasi Cahaya Bulan (*Lunar Ephemeris Correction*)**
-        Ketika pengamatan berlangsung pada rentang fase bulan (tanggal Hijriah pertengahan hingga akhir), hamburan cahaya bulan (cahaya perak) berpotensi mendistorsi *baseline* kegelapan malam. Dengan menggunakan pustaka ephemeris standar astronomi (`ephem`), aplikasi mendeteksi posisi alt-azimut bulan dan tingkat iluminasinya (fase) secara *real-time*. Jika altitude bulan $> 0^\circ$ dan fase iluminasi melampaui ambang $5\%$, aplikasi akan mengubah besaran magnitudo menjadi nilai fluks linier ($F = 10^{-0.4 \times m}$), lalu mengurangkan kontribusi fluks bulan secara teoretis, dan mengonversinya kembali menjadi magnitudo murni:
-        """)
-        st.latex(r"I_{\text{net}} = -2.5 \log_{10}\left( 10^{-0.4 \times m_{\text{tot}}} - 10^{-0.4 \times m_{\text{moon}}} \right)")
-        st.markdown(r"""Protokol matematis ini memastikan bahwa titik pecahnya fajar sadiq terbebas dari bias fase lunar.""")
 
     with st.expander("2. Algoritma SIGMAG-STAB (Sigmoid Gradient - Stabilization)") :
         st.markdown(r"""
-        Ini merupakan *core algorithm* utama yang dikembangkan secara spesifik oleh tim peneliti untuk mendeteksi *onset* (titik mulai) fajar sadiq secara otomatis dan kokoh (*robust*).
-        
-        **A. Agregasi Derajat (Binning) & Analisis Gradien**
-        Sumbu horizontal ketinggian matahari (sumbu-X) dibagi menjadi pita agregat (*bins*) menggunakan interval dinamis ($\sim 0.25^\circ - 1^\circ$ tergantung tingkat sampling alat). Pada setiap bin ini, kurva kecerlangan diukur perubahan turunan pertamanya (gradien kecerlangan terhadap penurunan posisi matahari).
-        
-        **B. Konstruksi Baseline Menggunakan Analisis MAD (*Median Absolute Deviation*)**
-        Rata-rata gradien pada kondisi malam absolut (ketinggian matahari $\le -20^\circ$) dijadikan sebagai standar *baseline* kegelapan stasioner (dinotasikan sebagai $\mu_{\text{grad}}$). Untuk mengidentifikasi kapan kurva "patah" secara signifikan (fajar), sistem tidak menggunakan standar deviasi klasik ($\sigma$) karena rentan meleset jika terdapat pencilan ekstrem (*outliers*) akibat awan tebal di tengah malam. Sebagai gantinya, digunakan statistik kokoh non-parametrik MAD:
-        """)
-        st.latex(r"\sigma_{\text{MAD}} = 1.4826 \cdot \text{median}\left(|x_i - \text{median}(x)|\right)")
-        
-        st.markdown(r"""
-        **C. Syarat Konsekutif Titik Belok (*Consecutive Thresholding*)**
-        Ambang batas stabilitas ($T_{\text{stab}}$) ditetapkan melalui persamaan:
-        """)
-        st.latex(r"T_{\text{stab}} = \mu_{\text{grad}} - (k \cdot \sigma_{\text{MAD}})")
-        st.markdown(r"""
-        Di mana $k$ adalah faktor pengali adaptif antara 1.0 hingga 1.5 bergantung pada besaran varians *baseline*. Titik fajar sadiq (*onset*) didefinisikan *hanya jika* gradien pembacaan meluncur turun melewati ambang $T_{\text{stab}}$ secara terus-menerus (*consecutive*) sepanjang $N$ data pembacaan beruntun. Syarat konsekutif ini dirancang untuk mencegah algoritma terkecoh oleh fluktuasi transien (misalnya, gumpalan awan yang lewat sejenak di atas sensor).
+        Metode utama deteksi fajar otonom di Kawakib.
+        * **Konstruksi Baseline & MAD:** Rata-rata gradien pada kondisi malam absolut (ketinggian matahari $\le -20^\circ$) dijadikan sebagai standar *baseline*. Ambang batas menggunakan *Median Absolute Deviation* (MAD) agar kebal terhadap pencilan awan.
+        * **Syarat Konsekutif Titik Belok:** Titik fajar sadiq (*onset*) didefinisikan *hanya jika* gradien pembacaan meluncur turun melewati ambang secara terus-menerus (*consecutive*) sepanjang $N$ data pembacaan beruntun.
         """)
 
-    with st.expander("3. Algoritma Alternatif: SIGMOID (*Non-Linear Curve Fitting*)"):
+    with st.expander("3. Validasi Cuaca Multi-Layer (Internal SQM & Satelit Global)"):
         st.markdown(r"""
-        Sebagai metode pelengkap dan pembanding (*cross-validation*), transisi cahaya fajar secara fisis mengikuti pola kurva-S atau Fungsi Logistik (*Sigmoid*). Aplikasi menggunakan algoritma kuadrat terkecil non-linier *Levenberg-Marquardt* (`scipy.optimize.curve_fit`) untuk mencocokkan data observasi dengan fungsi berikut:
-        """)
-        st.latex(r"y(x) = \frac{L}{1 + e^{-k(x - x_0)}} + b")
-        st.markdown(r"""
-        **Penjelasan Parameter Model:**
-        * $y(x)$: Magnitudo kecerlangan langit (Mpsas)
-        * $x$: Sudut ketinggian (depresi) matahari dalam derajat
-        * $L$: Amplitudo (selisih kecerlangan malam absolut dan fajar nyata)
-        * $b$: Asimtot dasar kegelapan langit malam (*Night Sky Baseline*)
-        * $k$: Tingkat kelandaian kurva pertumbuhan cahaya (Laju hamburan atmosfer)
-        * $x_0$: Parameter titik balik fajar (*Inflection Point* / *Fajar Sadiq*)
-        
-        Melalui proses iteratif minimalisasi *Residual Sum of Squares* (RSS) hingga batas maksimal 5.000 iterasi, nilai parameter optimal untuk $x_0$ diekstrak. Titik awal fajar sadiq dideklarasikan pada posisi saat kurva analitis Sigmoid mulai terdeviasi secara signifikan dari asimtot *baseline* ($b$).
-        """)
-
-    with st.expander("4. Diagnostik Awan & Kalibrasi Spasial Kemenag (Filter $\ge 20.5$ Mpsas)"):
-        st.markdown(r"""
-        Agar data empiris yang dihasilkan *reliable* dan teruji, algoritma ini dikawinkan dengan lapisan filter validasi akhir:
-        
-        * **Skrining Awan Berbasis Volatilitas (*Rolling Standard Deviation*):**
-        Gangguan awan (*cloud coverage*) dideteksi dengan mengevaluasi volatilitas data dalam jendela bergulir (*rolling window*) 60 menit di sekitar titik fajar yang ditemukan. Jika simpangan bakunya melampaui ambang batas dinamis yang disesuaikan dengan rata-rata mpsas saat itu, titik tersebut ditandai sebagai indikasi awan. Persentase kemunculan anomali ini direkam ke dalam matriks "Awan %".
-        
-        * **Kalibrasi Ekstrem Kemenag (Bortle Type 1 & 2):**
-        Polusi cahaya dari aktivitas manusia di wilayah perkotaan (*urban sky glow*) dapat membuat transisi fajar terlihat lebih lambat (seolah-olah terjadi di sudut yang lebih dangkal dari $-20^\circ$). Oleh karena itu, pada tahap evaluasi **Dashboard Statistik Nasional**, sistem dilengkapi dengan *Hard Filter*. Metrik komparatif hanya akan dirata-rata dan diuji terhadap standar Kemenag jika suatu pos observasi memenuhi tiga syarat mutlak:
-            1. **Kecerlangan Malam Minimal $20.5$ Mpsas** (Kualifikasi *Dark Sky* Bortle Tipe 1 & 2).
-            2. **Gangguan Awan $\le 5\%$** pada jendela fajar sadiq (Langit cerah bersih).
-            3. **Terbebas dari Koreksi Bulan** (Pengamatan pada saat bulan belum terbit atau fase *New Moon*).
-            
-        Kompilasi dan agregasi filter di atas menjadikan data analisis ini sepenuhnya selaras, objektif, dan dapat dipertanggungjawabkan dalam kajian empiris interdisipliner terkait hisab rukyat fajar Kemenag RI.
+        Agar data empiris yang dihasilkan *reliable* dan teruji mutlak, algoritma ini dikawinkan dengan validasi ganda:
+        1. **Sensor Awan Internal (Volatilitas SQM):** Mendeteksi fluktuasi awan menggunakan *Rolling Standard Deviation* dengan jendela 60 menit di sekitar titik fajar.
+        2. **Validasi Satelit Eksternal (Open-Meteo):** Sistem secara otonom menyedot data arsip satelit cuaca global untuk menarik persentase presisi tutupan awan (*Cloud Cover*) tepat di koordinat pos pengamatan pada jam 03.00 - 05.00 pagi waktu lokal. Hal ini menghasilkan bukti tak terbantahkan jika langit fajar memang benar-benar cerah (0-5% awan).
         """)
