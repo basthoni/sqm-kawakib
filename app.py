@@ -7,8 +7,10 @@ import tempfile
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import altair as alt
 from scipy.signal import savgol_filter
 from scipy.optimize import curve_fit
+import time
 
 # Pastikan ephem terinstal
 try:
@@ -53,7 +55,12 @@ st.markdown("""
 # FUNGSI BACKEND (CLOUD & MATEMATIKA)
 # =====================================================================
 try:
-    cloudinary.config(cloud_name=st.secrets["cloudinary"]["cloud_name"], api_key=st.secrets["cloudinary"]["api_key"], api_secret=st.secrets["cloudinary"]["api_secret"], secure=True)
+    cloudinary.config(
+        cloud_name=st.secrets["cloudinary"]["cloud_name"].strip() if "cloudinary" in st.secrets else None,
+        api_key=st.secrets["cloudinary"]["api_key"].strip() if "cloudinary" in st.secrets else None,
+        api_secret=st.secrets["cloudinary"]["api_secret"].strip() if "cloudinary" in st.secrets else None,
+        secure=True
+    )
 except: pass
 
 def upload_plot_to_cloudinary(fig, filename):
@@ -92,7 +99,6 @@ def save_to_google_sheets(data_dict):
             return True
             
         headers = existing_data[0]
-        
         new_headers_added = False
         for key in data_dict.keys():
             if key not in headers:
@@ -138,7 +144,7 @@ def load_data_from_google_sheets():
     except: return pd.DataFrame()
 
 # =====================================================================
-# FUNGSI INTEGRASI DRIVE (THE HARVESTER - WITH PAGINATION)
+# FUNGSI INTEGRASI DRIVE (PAGINATION)
 # =====================================================================
 def get_drive_service():
     scopes = ['https://www.googleapis.com/auth/drive']
@@ -157,8 +163,8 @@ def sync_from_soof_drive():
                 pageSize=1000,
                 pageToken=page_token
             ).execute()
-            
             files = results.get('files', [])
+            
             for file in files:
                 file_path = os.path.join(tempfile.gettempdir(), file['name'])
                 request = service.files().get_media(fileId=file['id'])
@@ -461,7 +467,7 @@ with tab_histori:
         st.download_button("⬇️ Unduh CSV", df_cloud.to_csv(index=False).encode('utf-8'), 'Rekap_Kawakib_Cloud.csv', 'text/csv')
 
 with tab_dashboard:
-    st.header("📊 Ringkasan Statistik Data")
+    st.header("📊 Ringkasan Statistik & Kalibrasi Standar Kemenag")
     df_stat = load_data_from_google_sheets()
     
     if not df_stat.empty:
@@ -471,41 +477,67 @@ with tab_dashboard:
         if 'Kota' not in df_stat.columns and 'Lokasi' in df_stat.columns:
             df_stat['Kota'] = df_stat['Lokasi'].apply(lambda x: re.split(r'[-,\|]', str(x))[-1].strip())
             
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Total Data", len(df_stat))
-        c2.metric("Rata-rata Fajar Global", f"{df_stat['Fajar_Alt'].mean():.2f}°")
-        c3.metric("Rata-rata Awan", f"{df_stat['Awan_%'].mean():.1f}%")
+        df_bersih = df_stat[df_stat['Awan_%'] <= 30]
+        rata_rata_global = df_stat['Fajar_Alt'].mean()
+        rata_rata_bersih = df_bersih['Fajar_Alt'].mean() if not df_bersih.empty else rata_rata_global
+        
+        standar_kemenag = -20.0
+        selisih_global = rata_rata_global - standar_kemenag
+        selisih_bersih = rata_rata_bersih - standar_kemenag
+        
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Total Pengamatan", len(df_stat))
+        c2.metric("Rata-rata (Semua Kondisi)", f"{rata_rata_global:.2f}°", f"{selisih_global:+.2f}° dari -20°", delta_color="inverse")
+        c3.metric("Rata-rata (Langit Bersih)", f"{rata_rata_bersih:.2f}°", f"{selisih_bersih:+.2f}° dari -20°", delta_color="inverse")
+        c4.metric("Rata-rata Awan", f"{df_stat['Awan_%'].mean():.1f}%")
         
         st.divider()
-        st.subheader("🌍 Analisis Spasial & Geografis (Berdasarkan Koordinat Kota)")
+        st.subheader("📉 Komparasi Kedalaman Fajar per Kota terhadap Standar Kemenag (-20°)")
+        st.markdown("Garis merah putus-putus menunjukkan ambang batas fajar sadiq standar Kementerian Agama RI.")
+        
+        df_loc = df_stat.groupby('Kota')['Fajar_Alt'].mean().dropna().reset_index()
+        
+        if not df_loc.empty:
+            bar_chart = alt.Chart(df_loc).mark_bar(color='#1D9A9C', cornerRadiusTopLeft=3, cornerRadiusTopRight=3).encode(
+                x=alt.X('Kota:N', title='Lokasi Pengamatan', sort='y'),
+                y=alt.Y('Fajar_Alt:Q', title='Rata-rata Kedalaman (°)', scale=alt.Scale(domain=[-22, -15])),
+                tooltip=['Kota', alt.Tooltip('Fajar_Alt:Q', format='.2f', title='Fajar (°)')]
+            )
+            kemenag_line = alt.Chart(pd.DataFrame({'Standar': [standar_kemenag]})).mark_rule(
+                color='#d9534f', strokeWidth=2, strokeDash=[5, 5]
+            ).encode(y='Standar:Q')
+            kemenag_label = alt.Chart(pd.DataFrame({'Standar': [standar_kemenag], 'Label': ['Standar Kemenag (-20°)']})).mark_text(
+                color='#d9534f', align='left', baseline='bottom', dx=5, dy=-5, fontSize=12, fontWeight='bold'
+            ).encode(y='Standar:Q', text='Label:N')
+            
+            st.altair_chart(bar_chart + kemenag_line + kemenag_label, use_container_width=True)
+        else:
+            st.info("Data fajar yang valid belum tersedia untuk memuat grafik komparasi.")
+
+        st.divider()
+        st.subheader("🌍 Analisis Spasial & Faktor Lingkungan")
         
         if 'Lintang' in df_stat.columns and 'Bujur' in df_stat.columns:
             df_map = df_stat.dropna(subset=['Lintang', 'Bujur', 'Fajar_Alt']).copy()
             if not df_map.empty:
                 df_map['lat'] = pd.to_numeric(df_map['Lintang'], errors='coerce')
                 df_map['lon'] = pd.to_numeric(df_map['Bujur'], errors='coerce')
-                
                 df_map_agg = df_map.groupby(['Kota', 'lat', 'lon']).agg(
                     Fajar_Rata2=('Fajar_Alt', 'mean'),
                     Total_Observasi=('Fajar_Alt', 'count')
                 ).reset_index()
                 
-                st.markdown("**Peta Persebaran Titik Observasi Kawakib**")
-                st.map(df_map_agg[['lat', 'lon']], zoom=5, use_container_width=True)
-                
-                st.markdown("**Tabel Agregasi Data Spasial**")
-                df_tabel = df_map_agg.rename(columns={'lat': 'Lintang', 'lon': 'Bujur', 'Fajar_Rata2': 'Rata-rata Fajar (°)'})
-                st.dataframe(df_tabel.style.format({'Rata-rata Fajar (°)': '{:.2f}'}), use_container_width=True)
+                col_map, col_tab = st.columns([1, 1])
+                with col_map:
+                    st.markdown("**Peta Persebaran Titik Observasi**")
+                    st.map(df_map_agg[['lat', 'lon']], zoom=4, use_container_width=True)
+                with col_tab:
+                    st.markdown("**Tabel Deviasi Kemenag per Koordinat**")
+                    df_tabel = df_map_agg.rename(columns={'lat': 'Lintang', 'lon': 'Bujur', 'Fajar_Rata2': 'Rata-rata Fajar (°)'})
+                    df_tabel['Deviasi dari Kemenag'] = df_tabel['Rata-rata Fajar (°)'] - (-20.0)
+                    st.dataframe(df_tabel.style.format({'Rata-rata Fajar (°)': '{:.2f}', 'Deviasi dari Kemenag': '{:+.2f}'}), use_container_width=True)
         
-        st.markdown("**Perbandingan Rata-rata Kedalaman Fajar per Kota**")
-        df_loc = df_stat.groupby('Kota')['Fajar_Alt'].mean().dropna()
-        if not df_loc.empty:
-            st.bar_chart(df_loc)
-        else:
-            st.info("Data fajar yang valid belum tersedia untuk memuat grafik.")
-
-        st.divider()
-        st.subheader("Analisis Per Kriteria Lingkungan")
+        st.write("")
         col1, col2 = st.columns(2)
         with col1:
             st.markdown("**Berdasarkan Polusi Cahaya (Bortle)**")
@@ -513,18 +545,45 @@ with tab_dashboard:
         with col2:
             st.markdown("**Berdasarkan Koreksi Bulan**")
             st.bar_chart(df_stat.groupby('Koreksi_Bulan')['Fajar_Alt'].mean().dropna())
+            
     else: st.info("Belum ada data untuk dianalisis.")
 
 with tab_algoritma:
-    st.header("📖 Metodologi & Landasan Matematis")
-    st.markdown("Aplikasi Kawakib Analyzer menerapkan pipa pemrosesan data otonom dengan metode statistik astrofisika tingkat lanjut.")
-    with st.expander("1. Pra-Pemrosesan Fotometri", expanded=True):
-        st.markdown("* **Kalkulasi Ketinggian Matahari:** Presisi astronomis dengan Julian Date.\n* **Smoothing:** Filter *Savitzky-Golay* (Orde 2, Jendela 31) untuk membuang noise tanpa merusak puncak kurva.\n* **Koreksi Cahaya Bulan:** Kompensasi otomatis jika fase cahaya bulan > 5%.")
-    with st.expander("2. Metode SIGMAG-STAB"):
-        st.markdown("Deteksi fajar berdasarkan turunan pertama kurva gradien dengan ambang batas dinamis berbasis **MAD (Median Absolute Deviation)**.")
-        st.latex(r"T = \mu - (k \cdot \sigma)")
-    with st.expander("3. Metode SIGMOID"):
-        st.markdown("Fitting data ke fungsi logistik (Kurva-S) menggunakan teknik *Non-Linear Least Squares*.")
-        st.latex(r"y = \frac{L}{1 + e^{-k(x - x_0)}} + b")
-    with st.expander("4. Diagnostik Awan & Analisis Spasial"):
-        st.markdown("* **Deteksi Awan:** Deteksi anomali pada kecerlangan langit menggunakan *Rolling Standard Deviation* (60 menit jendela waktu).\n* **Analisis Spasial:** Ekstraksi otomatis koordinat Lintang/Bujur untuk memetakan korelasi elevasi dan geografis terhadap kedalaman sudut fajar antar kota.")
+    st.header("📖 Metodologi, Landasan Matematis & Spesifikasi Algoritma Fajar Sadiq")
+    st.markdown("""
+    Aplikasi **Kawakib SQM Fajar Analyzer** dikembangkan khusus untuk memproses data fotometri langit malam hingga fajar secara otonom. Pendekatan yang digunakan menggabungkan astrometri presisi tinggi, pengolahan sinyal digital, serta kalibrasi empiris terhadap standar hilal dan fajar Kementerian Agama Republik Indonesia (**-20°**).
+    """)
+    
+    with st.expander("1. Pra-Pemrosesan Fotometri & Astrometri", expanded=True):
+        st.markdown("""
+        * **Kalkulasi Ketinggian Matahari (*Solar Altitude*):** Mengonversi waktu lokal pengamatan ke *Julian Date* (JD) berbasis UTC, memperhitungkan anomali mean, bujur ekliptika, kemiringan sumbu bumi (*obliquity*), persamaan waktu, hingga sudut jam lokal (*Local Hour Angle*). Koordinat lintang dan bujur stasiun pengamatan diekstrak otonom dari header file `.dat`.
+        * **Filter Smoothing Savitzky-Golay:** Data deret waktu kecerlangan langit (dalam *magnitudes per square arcsecond* / mpsas) kerap terpapar noise acak akibat fluktuasi atmosfer mikro. Filter Savitzky-Golay (Orde polinomial 2, Jendela 31) diaplikasikan untuk meratakan kurva tanpa menggeser atau mendistorsi titik belok fajar yang tajam.
+        * **Koreksi Cahaya Bulan (*Lunar Light Pollution Correction*):** Menggunakan pustaka ephemeris `ephem` untuk menghitung posisi alt-azimut serta fase iluminasi bulan secara real-time. Jika ketinggian bulan $> 0^\circ$ dan fase iluminasi $> 5\%$, kontribusi fluks cahaya bulan dikurangkan secara fotometris dari total intensitas langit terukur:
+        """)
+        st.latex(r"I_{\text{net}} = I_{\text{tot}} - I_{\text{moon}}")
+        st.markdown("Hal ini memastikan bahwa transisi fajar sadiq tidak terkontaminasi oleh cahaya perak bulan.")
+
+    with st.expander("2. Algoritma SIGMAG-STAB (Turunan Gradien & MAD)") :
+        st.markdown("""
+        Metode utama deteksi fajar otonom di Kawakib. Algoritma ini menganalisis perubahan gradien kecerlangan langit terhadap penurunan ketinggian matahari.
+        * **Pita Baseline Malam Hari:** Menghitung rata-rata dan deviasi pada rentang malam hari absolut ($\text{Ketinggian Matahari} < -20^\circ$).
+        * **Ambang Batas Dinamis MAD (*Median Absolute Deviation*):** Menggunakan statistik non-parametrik yang tahan terhadap pencilan (*outliers*) awan malam hari:
+        """)
+        st.latex(r"\sigma_{\text{MAD}} = 1.4826 \cdot \text{median}\left(|x_i - \text{median}(x)|\right)")
+        st.latex(r"T_{\text{stab}} = \mu_{\text{grad}} - (k \cdot \sigma_{\text{MAD}})")
+        st.markdown("Titik belok fajar (*onset*) didefinisikan sebagai titik ketika gradien kurva melampaui batas ambang stabil secara beruntun selama $N$ data sampel (*consecutive points*).")
+
+    with st.expander("3. Algoritma SIGMOID (*Non-Linear Curve Fitting*)"):
+        st.markdown("""
+        Sebagai metode alternatif pembanding, kurva transisi fajar dicocokkan dengan fungsi logistik berpola kurva-S (*Sigmoid Function*) menggunakan algoritma *Levenberg-Marquardt* (*Non-Linear Least Squares*):
+        """)
+        st.latex(r"y(x) = \frac{L}{1 + e^{-k(x - x_0)}} + b")
+        st.markdown("""
+        Di mana $x$ adalah ketinggian matahari, $L$ adalah amplitudo perubahan magnitudo fajar, $x_0$ adalah titik balik kurva (*inflection point* / posisi fajar sadiq), dan $b$ adalah asimtot dasar malam hari. Titik fajar diekstrak langsung dari parameter optimal $x_0$.
+    """)
+
+    with st.expander("4. Diagnostik Awan & Analisis Spasial Komparatif"):
+        st.markdown("""
+        * **Deteksi Gangguan Awan:** Menggunakan analisis *Rolling Standard Deviation* dengan jendela waktu 60 menit di sekitar titik fajar. Variasi deviasi standar yang melampaui ambang batas dinamis mengindikasikan adanya pergerakan awan menutupi ufuk timur, yang kemudian diberi label persentase gangguan awan ($\text{Awan } \%$).
+        * **Benchmark Standar Kemenag (-20°):** Seluruh hasil ekstraksi diakumulasikan secara spasial untuk membandingkan deviasi empiris antar kota terhadap ketetapan standar operasional Kemenag RI, memberikan evaluasi ilmiah yang transparan bagi pemangku kebijakan falakiyah.
+        """)
