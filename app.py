@@ -478,8 +478,9 @@ with tab_dashboard:
         if 'Kota' not in df_stat.columns and 'Lokasi' in df_stat.columns:
             df_stat['Kota'] = df_stat['Lokasi'].apply(lambda x: re.split(r'[-,\|]', str(x))[-1].strip())
             
+        # FILTER KEMENAG IDEAL DIREVISI: Langit >= 20.5 mpsas (Bortle Tipe 1 & 2), Awan <= 5%, Tanpa Koreksi Bulan
         df_kemenag_ideal = df_stat[
-            (df_stat['Garis_Dasar'] >= 21.0) & 
+            (df_stat['Garis_Dasar'] >= 20.5) & 
             (df_stat['Awan_%'] <= 5.0) & 
             (df_stat['Koreksi_Bulan'] == 'Pasif')
         ]
@@ -498,12 +499,12 @@ with tab_dashboard:
         c4.metric("Data Ideal Tersaring", len(df_kemenag_ideal))
         
         st.divider()
-        st.subheader("📉 Komparasi Kedalaman Fajar per Kota (Filter Standar Kemenag: Garis Dasar ≥ 21 Mpsas)")
+        st.subheader("📉 Komparasi Kedalaman Fajar per Kota (Filter Standar Kemenag: Garis Dasar ≥ 20.5 Mpsas)")
         
         df_loc = df_kemenag_ideal.groupby('Kota')['Fajar_Alt'].mean().dropna().reset_index()
         if df_loc.empty:
             df_loc = df_stat.groupby('Kota')['Fajar_Alt'].mean().dropna().reset_index()
-            st.warning("Perhatian: Belum ada data yang memenuhi kriteria ideal Kemenag (Langit ≥ 21 Mpsas & Bersih). Grafik di bawah menampilkan seluruh rata-rata data yang tersedia.")
+            st.warning("Perhatian: Belum ada data yang memenuhi kriteria ideal Kemenag (Langit ≥ 20.5 Mpsas & Bersih). Grafik di bawah menampilkan seluruh rata-rata data yang tersedia.")
         
         if not df_loc.empty:
             bar_chart = alt.Chart(df_loc).mark_bar(color='#1D9A9C', cornerRadiusTopLeft=3, cornerRadiusTopRight=3).encode(
@@ -558,40 +559,83 @@ with tab_dashboard:
 
 with tab_algoritma:
     st.header("📖 Metodologi, Landasan Matematis & Spesifikasi Algoritma Fajar Sadiq")
-    st.markdown("""
-    Aplikasi **Kawakib SQM Fajar Analyzer** dikembangkan khusus untuk memproses data fotometri langit malam hingga fajar secara otonom. Pendekatan yang digunakan menggabungkan astrometri presisi tinggi, pengolahan sinyal digital, serta kalibrasi empiris terhadap standar hilal dan fajar Kementerian Agama Republik Indonesia (**-20°**).
+    st.markdown(r"""
+    Aplikasi **Kawakib SQM Fajar Analyzer** ini dikembangkan sebagai instrumen riset tingkat lanjut untuk memproses data deret waktu (*time-series*) fotometri langit malam secara otonom. Pendekatan yang digunakan merupakan amalgamasi dari ilmu astrometri presisi tinggi, pemrosesan sinyal digital (*digital signal processing*), serta kalibrasi empiris astronomi Islam yang merujuk pada standar hisab awal waktu Subuh Kementerian Agama Republik Indonesia (**Solar Depression Angle: -20°**).
+    
+    Berikut adalah rincian mendalam (*in-depth breakdown*) dari algoritma dan model matematis yang beroperasi di balik layar aplikasi ini, yang dapat dijadikan rujukan validitas untuk penulisan karya ilmiah dan riset lanjutan.
     """)
     
-    with st.expander("1. Pra-Pemrosesan Fotometri & Astrometri", expanded=True):
-        st.markdown("""
-        * **Kalkulasi Ketinggian Matahari (*Solar Altitude*):** Mengonversi waktu lokal pengamatan ke *Julian Date* (JD) berbasis UTC, memperhitungkan anomali mean, bujur ekliptika, kemiringan sumbu bumi (*obliquity*), persamaan waktu, hingga sudut jam lokal (*Local Hour Angle*). Koordinat lintang dan bujur stasiun pengamatan diekstrak otonom dari header file `.dat`.
-        * **Filter Smoothing Savitzky-Golay:** Data deret waktu kecerlangan langit (dalam *magnitudes per square arcsecond* / mpsas) kerap terpapar noise acak akibat fluktuasi atmosfer mikro. Filter Savitzky-Golay (Orde polinomial 2, Jendela 31) diaplikasikan untuk meratakan kurva tanpa menggeser atau mendistorsi titik belok fajar yang tajam.
-        * **Koreksi Cahaya Bulan (*Lunar Light Pollution Correction*):** Menggunakan pustaka ephemeris `ephem` untuk menghitung posisi alt-azimut serta fase iluminasi bulan secara real-time. Jika ketinggian bulan $> 0^\circ$ dan fase iluminasi $> 5\%$, kontribusi fluks cahaya bulan dikurangkan secara fotometris dari total intensitas langit terukur:
+    with st.expander("1. Pra-Pemrosesan Astrometri & Filtrasi Fotometri", expanded=False):
+        st.markdown(r"""
+        Data mentah yang digunakan bersumber dari sensor *Unihedron Sky Quality Meter* (SQM-LE/LU) dengan format ekstensi `.dat`. Pada tahap pra-pemrosesan, sistem melakukan beberapa tahapan esensial:
+        
+        **A. Ekstraksi Header & Kalkulasi Ketinggian Matahari (*Solar Altitude Calculation*)**
+        Sistem secara otonom membedah metadata header `.dat` untuk mengekstrak parameter posisi (Lintang $\phi$ dan Bujur $\lambda$) serta perbedaan zona waktu lokal (*UTC offset*). Data waktu (*timestamp*) dari setiap rekam jejak kemudian dikonversi menjadi *Julian Date* ($JD$). Menggunakan algoritma presisi dari pengamatan matahari, aplikasi menghitung anomali rata-rata ($g$), bujur ekliptika ($\lambda_\odot$), kemiringan sumbu bumi ($\epsilon$), deklinasi matahari ($\delta$), hingga *Local Hour Angle* ($H$). 
+        
+        Ketinggian matahari (*Altitude* atau $a$) kemudian didapatkan melalui persamaan trigonometri bola langit:
         """)
-        st.latex(r"I_{\text{net}} = I_{\text{tot}} - I_{\text{moon}}")
-        st.markdown("Hal ini memastikan bahwa transisi fajar sadiq tidak terkontaminasi oleh cahaya perak bulan.")
+        st.latex(r"\sin(a) = \sin(\phi)\sin(\delta) + \cos(\phi)\cos(\delta)\cos(H)")
+        
+        st.markdown(r"""
+        **B. Savitzky-Golay *Smoothing Filter***
+        Data kecerlangan langit malam yang dinyatakan dalam *Magnitudes per Square Arcsecond* (mpsas) rentan terhadap *noise* acak frekuensi tinggi yang diakibatkan oleh perubahan turbulensi atmosfer mikro atau polusi cahaya instan (seperti lampu kendaraan). Aplikasi mengaplikasikan filter Savitzky-Golay dengan rentang jendela (*window size*) 31 data poin dan polinomial orde ke-2. Filter ini dipilih karena secara matematis ia mampu meratakan (*smooth*) fluktuasi tanpa menggeser fase waktu (*phase-shift*) atau merusak ketajaman titik belok (*inflection point*) fajar sadiq yang esensial.
+        
+        **C. Koreksi Kontaminasi Cahaya Bulan (*Lunar Ephemeris Correction*)**
+        Ketika pengamatan berlangsung pada rentang fase bulan (tanggal Hijriah pertengahan hingga akhir), hamburan cahaya bulan (cahaya perak) berpotensi mendistorsi *baseline* kegelapan malam. Dengan menggunakan pustaka ephemeris standar astronomi (`ephem`), aplikasi mendeteksi posisi alt-azimut bulan dan tingkat iluminasinya (fase) secara *real-time*. Jika altitude bulan $> 0^\circ$ dan fase iluminasi melampaui ambang $5\%$, aplikasi akan mengubah besaran magnitudo menjadi nilai fluks linier ($F = 10^{-0.4 \times m}$), lalu mengurangkan kontribusi fluks bulan secara teoretis, dan mengonversinya kembali menjadi magnitudo murni:
+        """)
+        st.latex(r"I_{\text{net}} = -2.5 \log_{10}\left( 10^{-0.4 \times m_{\text{tot}}} - 10^{-0.4 \times m_{\text{moon}}} \right)")
+        st.markdown(r"""Protokol matematis ini memastikan bahwa titik pecahnya fajar sadiq terbebas dari bias fase lunar.""")
 
-    with st.expander("2. Algoritma SIGMAG-STAB (Turunan Gradien & MAD)") :
-        st.markdown("""
-        Metode utama deteksi fajar otonom di Kawakib. Algoritma ini menganalisis perubahan gradien kecerlangan langit terhadap penurunan ketinggian matahari.
-        * **Pita Baseline Malam Hari:** Menghitung rata-rata dan deviasi pada rentang malam hari absolut ($\text{Ketinggian Matahari} < -20^\circ$).
-        * **Ambang Batas Dinamis MAD (*Median Absolute Deviation*):** Menggunakan statistik non-parametrik yang tahan terhadap pencilan (*outliers*) awan malam hari:
+    with st.expander("2. Algoritma SIGMAG-STAB (Sigmoid Gradient - Stabilization)") :
+        st.markdown(r"""
+        Ini merupakan *core algorithm* utama yang dikembangkan secara spesifik oleh tim peneliti untuk mendeteksi *onset* (titik mulai) fajar sadiq secara otomatis dan kokoh (*robust*).
+        
+        **A. Agregasi Derajat (Binning) & Analisis Gradien**
+        Sumbu horizontal ketinggian matahari (sumbu-X) dibagi menjadi pita agregat (*bins*) menggunakan interval dinamis ($\sim 0.25^\circ - 1^\circ$ tergantung tingkat sampling alat). Pada setiap bin ini, kurva kecerlangan diukur perubahan turunan pertamanya (gradien kecerlangan terhadap penurunan posisi matahari).
+        
+        **B. Konstruksi Baseline Menggunakan Analisis MAD (*Median Absolute Deviation*)**
+        Rata-rata gradien pada kondisi malam absolut (ketinggian matahari $\le -20^\circ$) dijadikan sebagai standar *baseline* kegelapan stasioner (dinotasikan sebagai $\mu_{\text{grad}}$). Untuk mengidentifikasi kapan kurva "patah" secara signifikan (fajar), sistem tidak menggunakan standar deviasi klasik ($\sigma$) karena rentan meleset jika terdapat pencilan ekstrem (*outliers*) akibat awan tebal di tengah malam. Sebagai gantinya, digunakan statistik kokoh non-parametrik MAD:
         """)
         st.latex(r"\sigma_{\text{MAD}} = 1.4826 \cdot \text{median}\left(|x_i - \text{median}(x)|\right)")
+        
+        st.markdown(r"""
+        **C. Syarat Konsekutif Titik Belok (*Consecutive Thresholding*)**
+        Ambang batas stabilitas ($T_{\text{stab}}$) ditetapkan melalui persamaan:
+        """)
         st.latex(r"T_{\text{stab}} = \mu_{\text{grad}} - (k \cdot \sigma_{\text{MAD}})")
-        st.markdown("Titik belok fajar (*onset*) didefinisikan sebagai titik ketika gradien kurva melampaui batas ambang stabil secara beruntun selama $N$ data sampel (*consecutive points*).")
+        st.markdown(r"""
+        Di mana $k$ adalah faktor pengali adaptif antara 1.0 hingga 1.5 bergantung pada besaran varians *baseline*. Titik fajar sadiq (*onset*) didefinisikan *hanya jika* gradien pembacaan meluncur turun melewati ambang $T_{\text{stab}}$ secara terus-menerus (*consecutive*) sepanjang $N$ data pembacaan beruntun. Syarat konsekutif ini dirancang untuk mencegah algoritma terkecoh oleh fluktuasi transien (misalnya, gumpalan awan yang lewat sejenak di atas sensor).
+        """)
 
-    with st.expander("3. Algoritma SIGMOID (*Non-Linear Curve Fitting*)"):
-        st.markdown("""
-        Sebagai metode alternatif pembanding, kurva transisi fajar dicocokkan dengan fungsi logistik berpola kurva-S (*Sigmoid Function*) menggunakan algoritma *Levenberg-Marquardt* (*Non-Linear Least Squares*):
+    with st.expander("3. Algoritma Alternatif: SIGMOID (*Non-Linear Curve Fitting*)"):
+        st.markdown(r"""
+        Sebagai metode pelengkap dan pembanding (*cross-validation*), transisi cahaya fajar secara fisis mengikuti pola kurva-S atau Fungsi Logistik (*Sigmoid*). Aplikasi menggunakan algoritma kuadrat terkecil non-linier *Levenberg-Marquardt* (`scipy.optimize.curve_fit`) untuk mencocokkan data observasi dengan fungsi berikut:
         """)
         st.latex(r"y(x) = \frac{L}{1 + e^{-k(x - x_0)}} + b")
-        st.markdown("""
-        Di mana $x$ adalah ketinggian matahari, $L$ adalah amplitudo perubahan magnitudo fajar, $x_0$ adalah titik balik kurva (*inflection point* / posisi fajar sadiq), dan $b$ adalah asimtot dasar malam hari. Titik fajar diekstrak langsung dari parameter optimal $x_0$.
-    """)
+        st.markdown(r"""
+        **Penjelasan Parameter Model:**
+        * $y(x)$: Magnitudo kecerlangan langit (Mpsas)
+        * $x$: Sudut ketinggian (depresi) matahari dalam derajat
+        * $L$: Amplitudo (selisih kecerlangan malam absolut dan fajar nyata)
+        * $b$: Asimtot dasar kegelapan langit malam (*Night Sky Baseline*)
+        * $k$: Tingkat kelandaian kurva pertumbuhan cahaya (Laju hamburan atmosfer)
+        * $x_0$: Parameter titik balik fajar (*Inflection Point* / *Fajar Sadiq*)
+        
+        Melalui proses iteratif minimalisasi *Residual Sum of Squares* (RSS) hingga batas maksimal 5.000 iterasi, nilai parameter optimal untuk $x_0$ diekstrak. Titik awal fajar sadiq dideklarasikan pada posisi saat kurva analitis Sigmoid mulai terdeviasi secara signifikan dari asimtot *baseline* ($b$).
+        """)
 
-    with st.expander("4. Diagnostik Awan & Analisis Spasial Komparatif"):
-        st.markdown("""
-        * **Diagnostik Gangguan Awan:** Menggunakan analisis *Rolling Standard Deviation* dengan jendela waktu 60 menit di sekitar titik fajar untuk mendeteksi fluktuasi mendung.
-        * **Filter Standar Kemenag (Langit Gelap Ideal):** Dasbor secara spesifik memfilter observasi dengan garis dasar malam $\ge 21.0\text{ mpsas}$, tanpa awan ($\le 5\%$), dan tanpa intervensi cahaya bulan untuk menghasilkan nilai empiris fajar sadiq yang paling akurat dan valid secara ilmiah.
+    with st.expander("4. Diagnostik Awan & Kalibrasi Spasial Kemenag (Filter $\ge 20.5$ Mpsas)"):
+        st.markdown(r"""
+        Agar data empiris yang dihasilkan *reliable* dan teruji, algoritma ini dikawinkan dengan lapisan filter validasi akhir:
+        
+        * **Skrining Awan Berbasis Volatilitas (*Rolling Standard Deviation*):**
+        Gangguan awan (*cloud coverage*) dideteksi dengan mengevaluasi volatilitas data dalam jendela bergulir (*rolling window*) 60 menit di sekitar titik fajar yang ditemukan. Jika simpangan bakunya melampaui ambang batas dinamis yang disesuaikan dengan rata-rata mpsas saat itu, titik tersebut ditandai sebagai indikasi awan. Persentase kemunculan anomali ini direkam ke dalam matriks "Awan %".
+        
+        * **Kalibrasi Ekstrem Kemenag (Bortle Type 1 & 2):**
+        Polusi cahaya dari aktivitas manusia di wilayah perkotaan (*urban sky glow*) dapat membuat transisi fajar terlihat lebih lambat (seolah-olah terjadi di sudut yang lebih dangkal dari $-20^\circ$). Oleh karena itu, pada tahap evaluasi **Dashboard Statistik Nasional**, sistem dilengkapi dengan *Hard Filter*. Metrik komparatif hanya akan dirata-rata dan diuji terhadap standar Kemenag jika suatu pos observasi memenuhi tiga syarat mutlak:
+            1. **Kecerlangan Malam Minimal $20.5$ Mpsas** (Kualifikasi *Dark Sky* Bortle Tipe 1 & 2).
+            2. **Gangguan Awan $\le 5\%$** pada jendela fajar sadiq (Langit cerah bersih).
+            3. **Terbebas dari Koreksi Bulan** (Pengamatan pada saat bulan belum terbit atau fase *New Moon*).
+            
+        Kompilasi dan agregasi filter di atas menjadikan data analisis ini sepenuhnya selaras, objektif, dan dapat dipertanggungjawabkan dalam kajian empiris interdisipliner terkait hisab rukyat fajar Kemenag RI.
         """)
