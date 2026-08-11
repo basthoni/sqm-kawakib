@@ -436,7 +436,7 @@ with tab_analisis:
                 file_paths = list()
                 for uploaded_file in uploaded_files:
                     file_path = os.path.join(temp_dir, uploaded_file.name)
-                    with open(file_path, "wb"] as f: f.write(uploaded_file.getbuffer())
+                    with open(file_path, "wb") as f: f.write(uploaded_file.getbuffer())
                     if uploaded_file.name.endswith(('.zip', '.ZIP')):
                         with zipfile.ZipFile(file_path, 'r') as zip_ref:
                             zip_ref.extractall(temp_dir)
@@ -478,7 +478,6 @@ with tab_dashboard:
         if 'Kota' not in df_stat.columns and 'Lokasi' in df_stat.columns:
             df_stat['Kota'] = df_stat['Lokasi'].apply(lambda x: re.split(r'[-,\|]', str(x))[-1].strip())
             
-        # FILTER KEMENAG IDEAL: Langit >= 21 mpsas, Awan <= 5%, Tanpa Koreksi Bulan (Pasif)
         df_kemenag_ideal = df_stat[
             (df_stat['Garis_Dasar'] >= 21.0) & 
             (df_stat['Awan_%'] <= 5.0) & 
@@ -501,7 +500,6 @@ with tab_dashboard:
         st.divider()
         st.subheader("📉 Komparasi Kedalaman Fajar per Kota (Filter Standar Kemenag: Garis Dasar ≥ 21 Mpsas)")
         
-        # Grafik khusus kota dari data ideal Kemenag (jika kosong, fallback ke semua data agar grafik tetap muncul)
         df_loc = df_kemenag_ideal.groupby('Kota')['Fajar_Alt'].mean().dropna().reset_index()
         if df_loc.empty:
             df_loc = df_stat.groupby('Kota')['Fajar_Alt'].mean().dropna().reset_index()
