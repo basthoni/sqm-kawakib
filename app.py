@@ -436,7 +436,7 @@ with tab_analisis:
                 file_paths = list()
                 for uploaded_file in uploaded_files:
                     file_path = os.path.join(temp_dir, uploaded_file.name)
-                    with open(file_path, "wb") as f: f.write(uploaded_file.getbuffer())
+                    with open(file_path, "wb"] as f: f.write(uploaded_file.getbuffer())
                     if uploaded_file.name.endswith(('.zip', '.ZIP')):
                         with zipfile.ZipFile(file_path, 'r') as zip_ref:
                             zip_ref.extractall(temp_dir)
@@ -473,29 +473,39 @@ with tab_dashboard:
     if not df_stat.empty:
         df_stat['Fajar_Alt'] = pd.to_numeric(df_stat['Fajar_Alt'], errors='coerce')
         df_stat['Awan_%'] = pd.to_numeric(df_stat['Awan_%'], errors='coerce')
+        df_stat['Garis_Dasar'] = pd.to_numeric(df_stat['Garis_Dasar'], errors='coerce')
         
         if 'Kota' not in df_stat.columns and 'Lokasi' in df_stat.columns:
             df_stat['Kota'] = df_stat['Lokasi'].apply(lambda x: re.split(r'[-,\|]', str(x))[-1].strip())
             
-        df_bersih = df_stat[df_stat['Awan_%'] <= 30]
-        rata_rata_global = df_stat['Fajar_Alt'].mean()
-        rata_rata_bersih = df_bersih['Fajar_Alt'].mean() if not df_bersih.empty else rata_rata_global
+        # FILTER KEMENAG IDEAL: Langit >= 21 mpsas, Awan <= 5%, Tanpa Koreksi Bulan (Pasif)
+        df_kemenag_ideal = df_stat[
+            (df_stat['Garis_Dasar'] >= 21.0) & 
+            (df_stat['Awan_%'] <= 5.0) & 
+            (df_stat['Koreksi_Bulan'] == 'Pasif')
+        ]
+        
+        rata_rata_kemenag = df_kemenag_ideal['Fajar_Alt'].mean() if not df_kemenag_ideal.empty else 0.0
+        rata_rata_total = df_stat['Fajar_Alt'].mean()
         
         standar_kemenag = -20.0
-        selisih_global = rata_rata_global - standar_kemenag
-        selisih_bersih = rata_rata_bersih - standar_kemenag
+        selisih_kemenag = rata_rata_kemenag - standar_kemenag
+        selisih_total = rata_rata_total - standar_kemenag
         
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Total Pengamatan", len(df_stat))
-        c2.metric("Rata-rata (Semua Kondisi)", f"{rata_rata_global:.2f}°", f"{selisih_global:+.2f}° dari -20°", delta_color="inverse")
-        c3.metric("Rata-rata (Langit Bersih)", f"{rata_rata_bersih:.2f}°", f"{selisih_bersih:+.2f}° dari -20°", delta_color="inverse")
-        c4.metric("Rata-rata Awan", f"{df_stat['Awan_%'].mean():.1f}%")
+        c1.metric("Total Data Keseluruhan", len(df_stat))
+        c2.metric("Rata-rata Standar Kemenag (Ideal)", f"{rata_rata_kemenag:.2f}°", f"{selisih_kemenag:+.2f}° dari -20°", delta_color="inverse")
+        c3.metric("Total Rata-rata (Pembanding)", f"{rata_rata_total:.2f}°", f"{selisih_total:+.2f}° dari -20°", delta_color="inverse")
+        c4.metric("Data Ideal Tersaring", len(df_kemenag_ideal))
         
         st.divider()
-        st.subheader("📉 Komparasi Kedalaman Fajar per Kota terhadap Standar Kemenag (-20°)")
-        st.markdown("Garis merah putus-putus menunjukkan ambang batas fajar sadiq standar Kementerian Agama RI.")
+        st.subheader("📉 Komparasi Kedalaman Fajar per Kota (Filter Standar Kemenag: Garis Dasar ≥ 21 Mpsas)")
         
-        df_loc = df_stat.groupby('Kota')['Fajar_Alt'].mean().dropna().reset_index()
+        # Grafik khusus kota dari data ideal Kemenag (jika kosong, fallback ke semua data agar grafik tetap muncul)
+        df_loc = df_kemenag_ideal.groupby('Kota')['Fajar_Alt'].mean().dropna().reset_index()
+        if df_loc.empty:
+            df_loc = df_stat.groupby('Kota')['Fajar_Alt'].mean().dropna().reset_index()
+            st.warning("Perhatian: Belum ada data yang memenuhi kriteria ideal Kemenag (Langit ≥ 21 Mpsas & Bersih). Grafik di bawah menampilkan seluruh rata-rata data yang tersedia.")
         
         if not df_loc.empty:
             bar_chart = alt.Chart(df_loc).mark_bar(color='#1D9A9C', cornerRadiusTopLeft=3, cornerRadiusTopRight=3).encode(
@@ -584,6 +594,6 @@ with tab_algoritma:
 
     with st.expander("4. Diagnostik Awan & Analisis Spasial Komparatif"):
         st.markdown("""
-        * **Deteksi Gangguan Awan:** Menggunakan analisis *Rolling Standard Deviation* dengan jendela waktu 60 menit di sekitar titik fajar. Variasi deviasi standar yang melampaui ambang batas dinamis mengindikasikan adanya pergerakan awan menutupi ufuk timur, yang kemudian diberi label persentase gangguan awan ($\text{Awan } \%$).
-        * **Benchmark Standar Kemenag (-20°):** Seluruh hasil ekstraksi diakumulasikan secara spasial untuk membandingkan deviasi empiris antar kota terhadap ketetapan standar operasional Kemenag RI, memberikan evaluasi ilmiah yang transparan bagi pemangku kebijakan falakiyah.
+        * **Diagnostik Gangguan Awan:** Menggunakan analisis *Rolling Standard Deviation* dengan jendela waktu 60 menit di sekitar titik fajar untuk mendeteksi fluktuasi mendung.
+        * **Filter Standar Kemenag (Langit Gelap Ideal):** Dasbor secara spesifik memfilter observasi dengan garis dasar malam $\ge 21.0\text{ mpsas}$, tanpa awan ($\le 5\%$), dan tanpa intervensi cahaya bulan untuk menghasilkan nilai empiris fajar sadiq yang paling akurat dan valid secara ilmiah.
         """)
