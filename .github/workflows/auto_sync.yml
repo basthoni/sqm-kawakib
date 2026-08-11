@@ -1,0 +1,35 @@
+name: "🌌 SOOF Auto-Harvester"
+
+on:
+  schedule:
+    # Jadwal otomatis: Berjalan setiap 6 jam sekali secara berkala
+    - cron: '0 */6 * * *'
+  
+  # Memungkinkan panjenengan menekan tombol 'Run workflow' secara manual kapan saja
+  workflow_dispatch: 
+
+jobs:
+  kalkulasi_fajar_otomatis:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v3
+
+      - name: 🐍 Setup Python Lingkungan
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: 📦 Install Pustaka Astronomi & Cloud
+        run: |
+          pip install pandas numpy matplotlib scipy ephem cloudinary gspread google-auth google-api-python-client
+
+      - name: 🚀 Eksekusi Robot Penyedot & Analisis
+        env:
+          GCP_SERVICE_ACCOUNT_JSON: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
+          CLOUDINARY_CLOUD_NAME: ${{ secrets.CLOUDINARY_CLOUD_NAME }}
+          CLOUDINARY_API_KEY: ${{ secrets.CLOUDINARY_API_KEY }}
+          CLOUDINARY_API_SECRET: ${{ secrets.CLOUDINARY_API_SECRET }}
+        run: |
+          python sync_runner.py
