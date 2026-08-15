@@ -10,7 +10,6 @@ import json
 import time
 import urllib.request
 
-# Hindari error jika matplotlib dijalankan tanpa layar (headless server)
 import matplotlib
 matplotlib.use('Agg')
 
@@ -27,9 +26,6 @@ import gspread
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 
-# ==========================================
-# KONFIGURASI KREDENSIAL DARI GITHUB SECRETS
-# ==========================================
 GSHEETS_PERMANEN_URL = "https://docs.google.com/spreadsheets/d/1E4RpTfcPeQorW3r9cjpZ5cp31dpa7N_oXRZksRWdxG4/edit?gid=0#gid=0"
 
 def get_gcp_creds():
@@ -45,12 +41,8 @@ try:
         api_secret=os.environ.get("CLOUDINARY_API_SECRET").strip() if os.environ.get("CLOUDINARY_API_SECRET") else None,
         secure=True
     )
-except Exception as e: 
-    print(f"Error Cloudinary Config: {e}")
+except: pass
 
-# ==========================================
-# FUNGSI UPLOAD & SINKRONISASI
-# ==========================================
 def upload_plot_to_cloudinary(fig, filename):
     try:
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
@@ -59,17 +51,13 @@ def upload_plot_to_cloudinary(fig, filename):
         response = cloudinary.uploader.upload(tmp_path, folder="kawakib_arsip", public_id=filename.replace(".png", ""))
         os.remove(tmp_path)
         return response.get("secure_url")
-    except Exception as e: 
-        print(f"Gagal upload plot: {e}")
-        return ""
+    except: return ""
 
 def upload_raw_to_cloudinary(file_path, filename):
     try:
         response = cloudinary.uploader.upload(file_path, resource_type="raw", folder="kawakib_raw_data", public_id=filename)
         return response.get("secure_url")
-    except Exception as e: 
-        print(f"Gagal upload raw: {e}")
-        return ""
+    except: return ""
 
 def get_gsheets_client():
     scopes = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
@@ -114,14 +102,10 @@ def save_to_google_sheets(data_dict):
             cell_list = sheet.range(cell_range)
             for cell, val in zip(cell_list, values): cell.value = val
             sheet.update_cells(cell_list)
-            print(f"Update baris duplikat di GSheets untuk {data_dict['Lokasi']} tgl {data_dict['Tanggal']}")
         else: 
             sheet.append_row(values)
-            print(f"Menambahkan baris baru di GSheets untuk {data_dict['Lokasi']} tgl {data_dict['Tanggal']}")
         return True
-    except Exception as e:
-        print(f"Error saving to sheets: {e}")
-        return False
+    except: return False
 
 def load_data_from_google_sheets():
     try:
@@ -131,12 +115,10 @@ def load_data_from_google_sheets():
     except: return pd.DataFrame()
 
 def sync_from_soof_drive():
-    print("Memulai koneksi ke Google Drive (Mode Robot)...")
     scopes = ['https://www.googleapis.com/auth/drive']
     creds = Credentials.from_service_account_info(get_gcp_creds(), scopes=scopes)
     service = build('drive', 'v3', credentials=creds)
     downloaded_paths = []
-    
     try:
         page_token = None
         while True:
@@ -146,7 +128,6 @@ def sync_from_soof_drive():
                 pageSize=1000,
                 pageToken=page_token
             ).execute()
-            
             files = results.get('files', [])
             for file in files:
                 file_path = os.path.join(tempfile.gettempdir(), file['name'])
@@ -154,19 +135,11 @@ def sync_from_soof_drive():
                 with open(file_path, "wb") as f:
                     f.write(request.execute())
                 downloaded_paths.append(file_path)
-                
             page_token = results.get('nextPageToken', None)
-            if page_token is None:
-                break
-        print(f"Berhasil menemukan & mendownload {len(downloaded_paths)} file data dari Drive.")
-    except Exception as e:
-        print(f"Error saat menarik file dari Drive: {e}")
-        
+            if page_token is None: break
+    except: pass
     return downloaded_paths
 
-# =====================================================================
-# INTEGRASI API SATELIT CUACA (OPEN-METEO)
-# =====================================================================
 def get_satellite_cloud_cover(lat, lon, date_str):
     try:
         url = f"https://archive-api.open-meteo.com/v1/archive?latitude={lat}&longitude={lon}&start_date={date_str}&end_date={date_str}&hourly=cloudcover&timezone=auto"
@@ -177,7 +150,6 @@ def get_satellite_cloud_cover(lat, lon, date_str):
             valid = [c for c in clouds[3:6] if c is not None]
             if valid: return round(sum(valid)/len(valid), 1)
     except: pass
-    
     try:
         url2 = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&start_date={date_str}&end_date={date_str}&hourly=cloudcover&timezone=auto"
         req2 = urllib.request.Request(url2, headers={'User-Agent': 'Mozilla/5.0'})
@@ -187,12 +159,8 @@ def get_satellite_cloud_cover(lat, lon, date_str):
             valid = [c for c in clouds[3:6] if c is not None]
             if valid: return round(sum(valid)/len(valid), 1)
     except: pass
-        
     return None
 
-# ==========================================
-# FUNGSI ASTRONOMI 
-# ==========================================
 def read_header_and_find_data_start(path, max_header_lines=80):
     header, data_start = list(), None
     site, lat, lon, utc_offset = "Unknown Site", None, None, 7
@@ -260,17 +228,24 @@ def apply_moonlight_correction(am, lat, lon, utc_offset):
     am["mpsas_corrected"] = corrected_mpsas
     return am, is_corrected
 
-def analyze_cloud_cover(am, onset_alt, window_minutes=60):
+# --- UPDATE: FILTER AWAN HANYA ±15 MENIT DARI TITIK BELOK ---
+def analyze_cloud_cover(am, onset_alt, window_minutes=15):
     if onset_alt is None: return 0.0, pd.DataFrame()
     onset_idx = (np.abs(am["sun_alt"] - onset_alt)).argmin()
     onset_dt = am["local_dt"].iloc[onset_idx]
+    
     mask = (am["local_dt"] >= onset_dt - pd.Timedelta(minutes=window_minutes)) & (am["local_dt"] <= onset_dt + pd.Timedelta(minutes=window_minutes))
     df_win = am[mask].copy()
-    if len(df_win) < 21: return 0.0, df_win
-    df_win['rolling_std'] = df_win['mpsas_corrected'].rolling(21, center=True).std()
+    
+    r_win = min(11, len(df_win) if len(df_win) % 2 != 0 else len(df_win)-1)
+    if r_win < 3: return 0.0, df_win
+    
+    df_win['rolling_std'] = df_win['mpsas_corrected'].rolling(r_win, center=True).std()
     dyn_thresh = max((-0.04545 * df_win['mpsas_corrected'].mean()) + 1.0500, 0.05)
+    
     base_series = am[am["sun_alt"] < -20]["mpsas_corrected"]
     garis_dasar = base_series.median() if not base_series.empty else am["mpsas_corrected"].max()
+    
     df_win['is_cloudy'] = (df_win['rolling_std'] > dyn_thresh) | ((np.abs(df_win['mpsas_corrected'] - garis_dasar) > 0.2) & (df_win['sun_alt'] < onset_alt))
     return (df_win['is_cloudy'].mean() * 100), df_win
 
@@ -328,9 +303,6 @@ def analyze_sigmoid(am):
         return x_eval[onset_idx], float(np.interp(x_eval[onset_idx], am["sun_alt"], am["mpsas_corrected"]))
     except: return None, None
 
-# ==========================================
-# EKSEKUSI UTAMA (MAIN LOOP)
-# ==========================================
 if __name__ == "__main__":
     method = "SIGMAG-STAB" 
     file_paths = sync_from_soof_drive()
@@ -339,24 +311,19 @@ if __name__ == "__main__":
         print("Selesai: Tidak ada file yang ditemukan.")
     else:
         df_existing = load_data_from_google_sheets()
-        
         for idx, path in enumerate(file_paths):
             print(f"[{idx+1}/{len(file_paths)}] Memproses: {os.path.basename(path)}")
             try:
                 am, site, lat, lon, utc_offset, date_str = load_sqm_data(path)
-                if am.empty: 
-                    continue
+                if am.empty: continue
                 
                 am, is_corrected = apply_moonlight_correction(am, lat, lon, utc_offset)
                 bin_deg, n_consec = get_dynamic_params(am)
+                if method == "SIGMAG-STAB": onset_alt, onset_msas = analyze_sigmag(am, bin_deg, n_consec)
+                else: onset_alt, onset_msas = analyze_sigmoid(am)
                 
-                if method == "SIGMAG-STAB":
-                    onset_alt, onset_msas = analyze_sigmag(am, bin_deg, n_consec)
-                else:
-                    onset_alt, onset_msas = analyze_sigmoid(am)
-                
-                cloud_pct, df_win = analyze_cloud_cover(am, onset_alt)
-                sat_cloud_pct = get_satellite_cloud_cover(lat, lon, date_str) # CEK KE SATELIT
+                cloud_pct, df_win = analyze_cloud_cover(am, onset_alt, window_minutes=15)
+                sat_cloud_pct = get_satellite_cloud_cover(lat, lon, date_str) 
                 
                 base_series = am[am["sun_alt"] < -20]["mpsas_corrected"]
                 baseline_mpsas = base_series.median() if not base_series.empty else am["mpsas_corrected"].max()
@@ -377,20 +344,16 @@ if __name__ == "__main__":
                     if onset_alt is not None:
                         ax.axvline(onset_alt, color="#1D9A9C", linestyle="--", linewidth=2, label=f"Titik Belok ({onset_alt:.2f}°)")
                         ax.scatter([onset_alt], [onset_msas], color="#1D9A9C", s=60, zorder=5)
-                    
                     cloudy_points = df_win[df_win['is_cloudy'] == True] if 'is_cloudy' in df_win.columns else pd.DataFrame()
                     if not cloudy_points.empty: ax.scatter(cloudy_points["sun_alt"], cloudy_points["mpsas_corrected"], color="#d9534f", s=15, label="Indikasi Awan (SQM)", zorder=4)
-                    
                     ax.invert_yaxis()
                     ax.set_xlim(-30, -5)
                     ax.set_xlabel("Ketinggian Matahari (Derajat)", fontweight='bold')
                     ax.set_ylabel("Kecerlangan Langit (Mpsas)", fontweight='bold')
                     ax.set_title(f"{site} | {date_str} [{method}]", color="#1A3C40", fontweight='bold')
                     ax.grid(True, linestyle=":", alpha=0.6)
-                    
                     onset_str = f"{onset_alt:.2f}°" if onset_alt is not None else "Tidak Ditemukan"
                     sat_str = f"{sat_cloud_pct:.1f}%" if sat_cloud_pct is not None else "N/A"
-                    
                     info_text = (f"Garis Dasar : {baseline_mpsas:.2f} Mpsas\n"
                                  f"Awan SQM/Sat: {cloud_pct:.1f}% / {sat_str}\n"
                                  f"Fase Bulan  : {'Aktif' if is_corrected else 'Pasif'}\n"
@@ -398,14 +361,10 @@ if __name__ == "__main__":
                     props = dict(boxstyle='round', facecolor='#F8F9FA', alpha=0.9, edgecolor='#1A3C40')
                     ax.text(0.02, baseline_mpsas - 1.2, info_text, transform=ax.get_yaxis_transform(), fontsize=9, verticalalignment='bottom', bbox=props, family='monospace')
                     ax.legend(loc="upper right")
-                    
-                    if not plot_url:
-                        plot_url = upload_plot_to_cloudinary(fig, f"Plot_{site}_{date_str}_{method}".replace(" ", "_"))
-                    if not raw_url:
-                        raw_url = upload_raw_to_cloudinary(path, f"Raw_{site}_{date_str}_{method}.dat".replace(" ", "_"))
+                    if not plot_url: plot_url = upload_plot_to_cloudinary(fig, f"Plot_{site}_{date_str}_{method}".replace(" ", "_"))
+                    if not raw_url: raw_url = upload_raw_to_cloudinary(path, f"Raw_{site}_{date_str}_{method}.dat".replace(" ", "_"))
                     plt.close(fig)
                 
-                # Simpan Hasilnya ke Google Sheets
                 save_to_google_sheets({
                     "Tanggal": date_str, "Kota": kota, "Lokasi": site, 
                     "Lintang": lat, "Bujur": lon, 
@@ -417,15 +376,8 @@ if __name__ == "__main__":
                     "Fajar_MSAS": round(onset_msas, 2) if onset_msas is not None else "",
                     "Link_Grafik": plot_url, "Link_DataMentah": raw_url 
                 })
-                
-                # JEDA NAPAS ROBOT AGAR TIDAK KENA ERROR 429 GOOGLE SHEETS
-                print("--> Istirahat 3 detik agar tidak diblokir Google...")
+                print("--> Istirahat 3 detik...")
                 time.sleep(3) 
-                
             except Exception as e:
-                print(f"--> [GAGAL] Error saat memproses {os.path.basename(path)}: {e}")
+                print(f"--> [GAGAL] Error {os.path.basename(path)}: {e}")
                 time.sleep(3) 
-
-    print("=========================================")
-    print("SINKRONISASI OTOMATIS SELESAI DENGAN SUKSES!")
-    print("=========================================")
