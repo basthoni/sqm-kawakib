@@ -43,6 +43,20 @@ try:
     )
 except: pass
 
+def get_city_from_coords(lat, lon):
+    if lat is None or lon is None: return "Unknown"
+    try:
+        url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={lat}&lon={lon}&zoom=10&addressdetails=1"
+        req = urllib.request.Request(url, headers={'User-Agent': 'Kawakib-SQM-Analyzer/1.0'})
+        with urllib.request.urlopen(req, timeout=5) as response:
+            data = json.loads(response.read())
+            address = data.get('address', {})
+            city = address.get('city') or address.get('county') or address.get('state_district') or address.get('town') or address.get('village')
+            if city:
+                return city.replace("Kabupaten ", "").replace("Kota ", "")
+    except: pass
+    return "Unknown"
+
 def upload_plot_to_cloudinary(fig, filename):
     try:
         with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
@@ -124,9 +138,7 @@ def sync_from_soof_drive():
         while True:
             results = service.files().list(
                 q="mimeType != 'application/vnd.google-apps.folder' and (name contains '.dat' or name contains '.DAT' or name contains '.txt') and trashed = false",
-                fields="nextPageToken, files(id, name)",
-                pageSize=1000,
-                pageToken=page_token
+                fields="nextPageToken, files(id, name)", pageSize=1000, pageToken=page_token
             ).execute()
             files = results.get('files', [])
             for file in files:
@@ -228,7 +240,6 @@ def apply_moonlight_correction(am, lat, lon, utc_offset):
     am["mpsas_corrected"] = corrected_mpsas
     return am, is_corrected
 
-# --- UPDATE: FILTER AWAN HANYA ±15 MENIT DARI TITIK BELOK ---
 def analyze_cloud_cover(am, onset_alt, window_minutes=15):
     if onset_alt is None: return 0.0, pd.DataFrame()
     onset_idx = (np.abs(am["sun_alt"] - onset_alt)).argmin()
@@ -328,7 +339,13 @@ if __name__ == "__main__":
                 base_series = am[am["sun_alt"] < -20]["mpsas_corrected"]
                 baseline_mpsas = base_series.median() if not base_series.empty else am["mpsas_corrected"].max()
                 lp_category, _ = categorize_light_pollution(baseline_mpsas)
-                kota = re.split(r'[-,\|]', site)[-1].strip()
+                
+                # --- AUTO GEOCODING ---
+                kota_akurat = get_city_from_coords(lat, lon)
+                if kota_akurat == "Unknown":
+                    kota = re.split(r'[-,\|]', site)[-1].strip()
+                else:
+                    kota = kota_akurat
                 
                 plot_url, raw_url = "", ""
                 if not df_existing.empty and {"Tanggal", "Lokasi", "Metode"}.issubset(df_existing.columns):
@@ -380,4 +397,4 @@ if __name__ == "__main__":
                 time.sleep(3) 
             except Exception as e:
                 print(f"--> [GAGAL] Error {os.path.basename(path)}: {e}")
-                time.sleep(3) 
+                time.sleep(3)
