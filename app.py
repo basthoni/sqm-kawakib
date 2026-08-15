@@ -1,24 +1,22 @@
-import streamlit as st
-import sys
 import os
 import re
-import zipfile
 import tempfile
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import altair as alt
 from scipy.signal import savgol_filter
 from scipy.optimize import curve_fit
+import json
 import time
 import urllib.request
-import json
 
-# Pastikan ephem terinstal
+import matplotlib
+matplotlib.use('Agg')
+
 try:
     import ephem
 except ImportError:
-    import subprocess
+    import subprocess, sys
     subprocess.check_call([sys.executable, "-m", "pip", "install", "ephem"])
     import ephem
 
@@ -28,39 +26,19 @@ import gspread
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 
-# =====================================================================
-# KONFIGURASI TEMA, LOGO, & LINK PERMANEN
-# =====================================================================
-st.set_page_config(page_title="Kawakib SQM Analyzer", page_icon="🌌", layout="wide")
-
-KAWAKIB_LOGO_URL = "https://lh3.googleusercontent.com/d/1aoTDRdL-wS8EPytGGZ7dsJY3Nntnp-3U"
 GSHEETS_PERMANEN_URL = "https://docs.google.com/spreadsheets/d/1E4RpTfcPeQorW3r9cjpZ5cp31dpa7N_oXRZksRWdxG4/edit?gid=0#gid=0"
-SAMPLE_DATA_DRIVE_URL = "https://drive.google.com/drive/folders/1KHg8dRtkt9KrdDFZ8esbiuHQtKJvP2AN?usp=drive_link"
 
-# --- INJEKSI CSS BERSIH & FIX DROPDOWN + IKON SIDEBAR ---
-st.markdown("""
-<style>
-    @import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,600;1,400&family=Inter:wght@300;400;600&display=swap');
-    .block-container { padding-top: 2.9rem !important; padding-bottom: 2rem !important; }
-    [data-testid="stSidebar"] { background-color: #1A3C40; padding-top: 1.5rem !important; }
-    [data-testid="stSidebar"] p, [data-testid="stSidebar"] label, [data-testid="stSidebar"] h1, [data-testid="stSidebar"] h2, [data-testid="stSidebar"] h3, [data-testid="stSidebar"] li { color: #E8F1F2 !important; font-family: 'Inter', sans-serif !important; }
-    [data-testid="stSidebar"] span:not([data-baseweb="select"] span) { color: #E8F1F2 !important; }
-    [data-testid="stSidebar"] [data-baseweb="select"] { background-color: #FFFFFF !important; border-radius: 8px !important; }
-    [data-testid="stSidebar"] [data-baseweb="select"] * { color: #1A3C40 !important; -webkit-text-fill-color: #1A3C40 !important; }
-    .stButton>button { background-color: #1D9A9C; color: #FFFFFF !important; border-radius: 50px !important; border: none; padding: 0.5rem 1.5rem !important; font-weight: 600; transition: all 0.3s ease; }
-    .stButton>button:hover { background-color: #25B8BA; }
-    [data-testid="stSidebar"] a { color: #79E0E2 !important; font-weight: 600; text-decoration: none; }
-</style>
-""", unsafe_allow_html=True)
+def get_gcp_creds():
+    creds_json = os.environ.get("GCP_SERVICE_ACCOUNT_JSON")
+    if not creds_json:
+        raise ValueError("GCP_SERVICE_ACCOUNT_JSON tidak ditemukan di Environment Variables!")
+    return json.loads(creds_json)
 
-# =====================================================================
-# FUNGSI BACKEND (CLOUD & MATEMATIKA)
-# =====================================================================
 try:
     cloudinary.config(
-        cloud_name=st.secrets["cloudinary"]["cloud_name"].strip() if "cloudinary" in st.secrets else None,
-        api_key=st.secrets["cloudinary"]["api_key"].strip() if "cloudinary" in st.secrets else None,
-        api_secret=st.secrets["cloudinary"]["api_secret"].strip() if "cloudinary" in st.secrets else None,
+        cloud_name=os.environ.get("CLOUDINARY_CLOUD_NAME").strip() if os.environ.get("CLOUDINARY_CLOUD_NAME") else None,
+        api_key=os.environ.get("CLOUDINARY_API_KEY").strip() if os.environ.get("CLOUDINARY_API_KEY") else None,
+        api_secret=os.environ.get("CLOUDINARY_API_SECRET").strip() if os.environ.get("CLOUDINARY_API_SECRET") else None,
         secure=True
     )
 except: pass
@@ -82,18 +60,16 @@ def upload_raw_to_cloudinary(file_path, filename):
     except: return ""
 
 def get_gsheets_client():
-    try:
-        scopes = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
-        creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
-        return gspread.authorize(creds)
-    except: return None
+    scopes = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
+    creds = Credentials.from_service_account_info(get_gcp_creds(), scopes=scopes)
+    return gspread.authorize(creds)
 
 def save_to_google_sheets(data_dict):
-    client = get_gsheets_client()
-    if client is None: return False
     try:
+        client = get_gsheets_client()
         sheet = client.open_by_url(GSHEETS_PERMANEN_URL).sheet1
         existing_data = sheet.get_all_values()
+        
         if not existing_data:
             headers = list(data_dict.keys())
             sheet.append_row(headers)
@@ -106,23 +82,19 @@ def save_to_google_sheets(data_dict):
             if key not in headers:
                 headers.append(key)
                 new_headers_added = True
-                
         if new_headers_added:
             sheet.update(range_name='A1', values=[headers])
             
-        try:
-            idx_tgl = headers.index("Tanggal")
-            idx_lok = headers.index("Lokasi")
-            idx_met = headers.index("Metode")
-        except:
-            sheet.append_row([str(data_dict.get(key, "")) for key in headers])
-            return True
-            
+        idx_tgl = headers.index("Tanggal") if "Tanggal" in headers else -1
+        idx_lok = headers.index("Lokasi") if "Lokasi" in headers else -1
+        idx_met = headers.index("Metode") if "Metode" in headers else -1
+        
         row_to_update = None
-        for i, row in enumerate(existing_data[1:], start=2):
-            if len(row) > max(idx_tgl, idx_lok, idx_met):
-                if (row[idx_tgl] == str(data_dict["Tanggal"]) and row[idx_lok] == str(data_dict["Lokasi"]) and row[idx_met] == str(data_dict["Metode"])):
-                    row_to_update = i; break
+        if idx_tgl != -1 and idx_lok != -1 and idx_met != -1:
+            for i, row in enumerate(existing_data[1:], start=2):
+                if len(row) > max(idx_tgl, idx_lok, idx_met):
+                    if (row[idx_tgl] == str(data_dict["Tanggal"]) and row[idx_lok] == str(data_dict["Lokasi"]) and row[idx_met] == str(data_dict["Metode"])):
+                        row_to_update = i; break
                     
         values = [str(data_dict.get(h, "")) for h in headers]
         if row_to_update:
@@ -133,21 +105,18 @@ def save_to_google_sheets(data_dict):
         else: 
             sheet.append_row(values)
         return True
-    except Exception as e:
-        print(f"Error saving to sheets: {e}")
-        return False
+    except: return False
 
 def load_data_from_google_sheets():
-    client = get_gsheets_client()
-    if client is None: return pd.DataFrame()
     try:
+        client = get_gsheets_client()
         sheet = client.open_by_url(GSHEETS_PERMANEN_URL).sheet1
         return pd.DataFrame(sheet.get_all_records())
     except: return pd.DataFrame()
 
 def sync_from_soof_drive():
     scopes = ['https://www.googleapis.com/auth/drive']
-    creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scopes)
+    creds = Credentials.from_service_account_info(get_gcp_creds(), scopes=scopes)
     service = build('drive', 'v3', credentials=creds)
     downloaded_paths = []
     try:
@@ -160,45 +129,28 @@ def sync_from_soof_drive():
                 pageToken=page_token
             ).execute()
             files = results.get('files', [])
-            
             for file in files:
                 file_path = os.path.join(tempfile.gettempdir(), file['name'])
                 request = service.files().get_media(fileId=file['id'])
                 with open(file_path, "wb") as f:
                     f.write(request.execute())
                 downloaded_paths.append(file_path)
-                
             page_token = results.get('nextPageToken', None)
-            if page_token is None:
-                break
-    except Exception as e:
-        st.error(f"Error accessing Google Drive: {e}")
-        
+            if page_token is None: break
+    except: pass
     return downloaded_paths
 
-# =====================================================================
-# INTEGRASI API SATELIT CUACA (OPEN-METEO)
-# =====================================================================
 def get_satellite_cloud_cover(lat, lon, date_str):
-    """
-    Menyedot persentase tutupan awan dari satelit cuaca internasional (Open-Meteo) 
-    pada jam 03.00 - 05.00 pagi waktu lokal.
-    """
     try:
-        # Coba Archive API dulu (Untuk data historis lama > 5 hari)
         url = f"https://archive-api.open-meteo.com/v1/archive?latitude={lat}&longitude={lon}&start_date={date_str}&end_date={date_str}&hourly=cloudcover&timezone=auto"
         req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req, timeout=5) as response:
             data = json.loads(response.read())
             clouds = data.get('hourly', {}).get('cloudcover', [])
-            # Ambil data jam 03.00, 04.00, 05.00 pagi (Index 3, 4, 5)
             valid = [c for c in clouds[3:6] if c is not None]
             if valid: return round(sum(valid)/len(valid), 1)
-    except:
-        pass
-    
+    except: pass
     try:
-        # Fallback ke Forecast API (Untuk data yang sangat baru / hari ini)
         url2 = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&start_date={date_str}&end_date={date_str}&hourly=cloudcover&timezone=auto"
         req2 = urllib.request.Request(url2, headers={'User-Agent': 'Mozilla/5.0'})
         with urllib.request.urlopen(req2, timeout=5) as response:
@@ -206,14 +158,9 @@ def get_satellite_cloud_cover(lat, lon, date_str):
             clouds = data.get('hourly', {}).get('cloudcover', [])
             valid = [c for c in clouds[3:6] if c is not None]
             if valid: return round(sum(valid)/len(valid), 1)
-    except:
-        pass
-        
+    except: pass
     return None
 
-# =====================================================================
-# FUNGSI MATEMATIKA & ASTRONOMI
-# =====================================================================
 def read_header_and_find_data_start(path, max_header_lines=80):
     header, data_start = list(), None
     site, lat, lon, utc_offset = "Unknown Site", None, None, 7
@@ -281,17 +228,24 @@ def apply_moonlight_correction(am, lat, lon, utc_offset):
     am["mpsas_corrected"] = corrected_mpsas
     return am, is_corrected
 
-def analyze_cloud_cover(am, onset_alt, window_minutes=60):
+# --- UPDATE: FILTER AWAN HANYA ±15 MENIT DARI TITIK BELOK ---
+def analyze_cloud_cover(am, onset_alt, window_minutes=15):
     if onset_alt is None: return 0.0, pd.DataFrame()
     onset_idx = (np.abs(am["sun_alt"] - onset_alt)).argmin()
     onset_dt = am["local_dt"].iloc[onset_idx]
+    
     mask = (am["local_dt"] >= onset_dt - pd.Timedelta(minutes=window_minutes)) & (am["local_dt"] <= onset_dt + pd.Timedelta(minutes=window_minutes))
     df_win = am[mask].copy()
-    if len(df_win) < 21: return 0.0, df_win
-    df_win['rolling_std'] = df_win['mpsas_corrected'].rolling(21, center=True).std()
+    
+    r_win = min(11, len(df_win) if len(df_win) % 2 != 0 else len(df_win)-1)
+    if r_win < 3: return 0.0, df_win
+    
+    df_win['rolling_std'] = df_win['mpsas_corrected'].rolling(r_win, center=True).std()
     dyn_thresh = max((-0.04545 * df_win['mpsas_corrected'].mean()) + 1.0500, 0.05)
+    
     base_series = am[am["sun_alt"] < -20]["mpsas_corrected"]
     garis_dasar = base_series.median() if not base_series.empty else am["mpsas_corrected"].max()
+    
     df_win['is_cloudy'] = (df_win['rolling_std'] > dyn_thresh) | ((np.abs(df_win['mpsas_corrected'] - garis_dasar) > 0.2) & (df_win['sun_alt'] < onset_alt))
     return (df_win['is_cloudy'].mean() * 100), df_win
 
@@ -349,283 +303,81 @@ def analyze_sigmoid(am):
         return x_eval[onset_idx], float(np.interp(x_eval[onset_idx], am["sun_alt"], am["mpsas_corrected"]))
     except: return None, None
 
-def process_and_save_data(file_paths, method, df_existing):
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    for idx, path in enumerate(file_paths):
-        status_text.text(f"Memproses {idx+1}/{len(file_paths)}: {os.path.basename(path)}")
-        try:
-            am, site, lat, lon, utc_offset, date_str = load_sqm_data(path)
-            if am.empty: continue
-            
-            # PROSES ASTRONOMI & MATEMATIKA
-            am, is_corrected = apply_moonlight_correction(am, lat, lon, utc_offset)
-            bin_deg, n_consec = get_dynamic_params(am)
-            if method == "SIGMAG-STAB": onset_alt, onset_msas = analyze_sigmag(am, bin_deg, n_consec)
-            else: onset_alt, onset_msas = analyze_sigmoid(am)
-            
-            # DIAGNOSTIK AWAN SQM & SATELIT
-            cloud_pct, df_win = analyze_cloud_cover(am, onset_alt)
-            sat_cloud_pct = get_satellite_cloud_cover(lat, lon, date_str) # PANGGIL SATELIT
-            
-            base_series = am[am["sun_alt"] < -20]["mpsas_corrected"]
-            baseline_mpsas = base_series.median() if not base_series.empty else am["mpsas_corrected"].max()
-            lp_category, expected_alt = categorize_light_pollution(baseline_mpsas)
-            
-            kota = re.split(r'[-,\|]', site)[-1].strip()
-            
-            fig, ax = plt.subplots(figsize=(10, 5))
-            ax.plot(am["sun_alt"], am["mpsas_corrected"], color="#1A3C40", alpha=0.8, linewidth=1.5, label="SQM Terkoreksi")
-            if is_corrected: ax.plot(am["sun_alt"], am["mpsas"], color="#808080", alpha=0.4, linestyle=":", label="SQM Mentah")
-            if onset_alt is not None:
-                ax.axvline(onset_alt, color="#1D9A9C", linestyle="--", linewidth=2, label=f"Titik Belok ({onset_alt:.2f}°)")
-                ax.scatter([onset_alt], [onset_msas], color="#1D9A9C", s=60, zorder=5)
-            cloudy_points = df_win[df_win['is_cloudy'] == True] if 'is_cloudy' in df_win.columns else pd.DataFrame()
-            if not cloudy_points.empty: ax.scatter(cloudy_points["sun_alt"], cloudy_points["mpsas_corrected"], color="#d9534f", s=15, label="Indikasi Awan (SQM)", zorder=4)
-            ax.invert_yaxis()
-            ax.set_xlim(-30, -5)
-            ax.set_xlabel("Ketinggian Matahari (Derajat)", fontweight='bold')
-            ax.set_ylabel("Kecerlangan Langit (Mpsas)", fontweight='bold')
-            ax.set_title(f"{site} | {date_str} [{method}]", color="#1A3C40", fontweight='bold')
-            ax.grid(True, linestyle=":", alpha=0.6)
-            
-            onset_str = f"{onset_alt:.2f}°" if onset_alt is not None else "Tidak Ditemukan"
-            sat_str = f"{sat_cloud_pct:.1f}%" if sat_cloud_pct is not None else "N/A"
-            
-            info_text = (f"Garis Dasar : {baseline_mpsas:.2f} Mpsas\n"
-                         f"Awan SQM/Sat: {cloud_pct:.1f}% / {sat_str}\n"
-                         f"Fase Bulan  : {'Aktif' if is_corrected else 'Pasif'}\n"
-                         f"Fajar Sadiq : {onset_str}")
-            props = dict(boxstyle='round', facecolor='#F8F9FA', alpha=0.9, edgecolor='#1A3C40')
-            ax.text(0.02, baseline_mpsas - 1.2, info_text, transform=ax.get_yaxis_transform(), fontsize=9, verticalalignment='bottom', bbox=props, family='monospace')
-            ax.legend(loc="upper right")
-            
-            plot_url, raw_url = "", ""
-            if not df_existing.empty and {"Tanggal", "Lokasi", "Metode"}.issubset(df_existing.columns):
-                match = df_existing[(df_existing["Tanggal"].astype(str).str.strip() == str(date_str)) & (df_existing["Lokasi"].astype(str).str.strip() == str(site)) & (df_existing["Metode"].astype(str).str.strip() == str(method))]
-                if not match.empty:
-                    plot_url = str(match.iloc[0].get("Link_Grafik", "")).strip()
-                    raw_url = str(match.iloc[0].get("Link_DataMentah", "")).strip()
-
-            if plot_url and raw_url: 
-                status_text.text(f"Data duplikat terdeteksi: Menggunakan arsip lama...")
-            else:
-                status_text.text(f"Mengunggah arsip baru ke Cloudinary...")
-                plot_url = upload_plot_to_cloudinary(fig, f"Plot_{site}_{date_str}_{method}".replace(" ", "_"))
-                raw_url = upload_raw_to_cloudinary(path, f"Raw_{site}_{date_str}_{method}.dat".replace(" ", "_"))
-            
-            save_to_google_sheets({
-                "Tanggal": date_str, "Kota": kota, "Lokasi": site, 
-                "Lintang": lat, "Bujur": lon, 
-                "Metode": method, "Bortle": lp_category.split("(")[-1].replace(")",""),
-                "Awan_%": round(cloud_pct, 1), 
-                "Awan_Satelit_%": sat_cloud_pct if sat_cloud_pct is not None else "",
-                "Koreksi_Bulan": "Aktif" if is_corrected else "Pasif",
-                "Garis_Dasar": round(baseline_mpsas, 2), "Fajar_Alt": round(onset_alt, 2) if onset_alt is not None else "",
-                "Fajar_MSAS": round(onset_msas, 2) if onset_msas is not None else "",
-                "Link_Grafik": plot_url, "Link_DataMentah": raw_url 
-            })
-            st.pyplot(fig)
-            plt.close(fig)
-        except Exception as e: st.error(f"Gagal memproses {os.path.basename(path)}: {str(e)}")
-        progress_bar.progress((idx + 1) / len(file_paths))
-    status_text.text("")
-    st.success("🎉 Seluruh pengamatan dan validasi satelit berhasil diproses.")
-
-# =====================================================================
-# UI KONTROL & SIDEBAR
-# =====================================================================
-with st.sidebar:
-    st.header("⚙️ Pengaturan")
-    method = st.selectbox("Metode Ekstraksi Fajar", ["SIGMAG-STAB", "SIGMOID"])
-    st.info("Upload mandiri atau tarik data otomatis dari SOOF Drive.")
-    st.divider()
-    if st.button("📡 Tarik Data dari SOOF (Drive)"):
-        with st.spinner("Menyedot data dari kotak pos..."):
-            file_paths = sync_from_soof_drive()
-            if not file_paths: 
-                st.warning("Tidak ada file baru di Drive atau pengaturan folder belum lengkap.")
-            else: 
-                st.success(f"Berhasil menarik {len(file_paths)} file!")
-                df_existing = load_data_from_google_sheets()
-                process_and_save_data(file_paths, method, df_existing)
+if __name__ == "__main__":
+    method = "SIGMAG-STAB" 
+    file_paths = sync_from_soof_drive()
     
-    st.markdown("### 📂 Data Pembelajaran")
-    st.markdown(f"[🔗 Unduh Sample Data SQM]({SAMPLE_DATA_DRIVE_URL})")
-
-# =====================================================================
-# HEADER UTAMA
-# =====================================================================
-st.markdown(f"""
-    <div style="display: flex; align-items: center; gap: 14px; margin-bottom: 4px;">
-        <img src="{KAWAKIB_LOGO_URL}" style="height: 48px; width: auto; object-fit: contain;">
-        <h1 style='font-family: Lora, serif; color: #1A3C40; font-size: 1.65rem; margin: 0; padding: 0; line-height: 1.2;'>
-            KAWAKIB INSTITUTE: SQM Fajar Analyzer
-        </h1>
-    </div>
-    <div style="border-bottom: 2px solid #1D9A9C; margin-top: 8px; margin-bottom: 10px;"></div>
-    <p style='color: #555; font-size: 0.92rem; margin-bottom: 15px;'>
-        Aplikasi web ini mengekstrak titik belok fajar sadiq secara otonom. Terintegrasi dengan radar satelit cuaca untuk validasi absolut.
-    </p>
-""", unsafe_allow_html=True)
-
-tab_analisis, tab_histori, tab_dashboard, tab_algoritma = st.tabs(["🚀 Analisis Data", "☁️ Basis Data Cloud", "📊 Dashboard Statistik", "📖 Metodologi & Algoritma"])
-
-with tab_analisis:
-    uploaded_files = st.file_uploader("Unggah File Data Observasi Secara Manual", accept_multiple_files=True, type=['dat', 'DAT', 'txt', 'TXT', 'zip', 'ZIP'])
-    if uploaded_files:
-        if st.button("Mulai Kalkulasi Fotometri 🚀"):
-            with tempfile.TemporaryDirectory() as temp_dir:
-                file_paths = list()
-                for uploaded_file in uploaded_files:
-                    file_path = os.path.join(temp_dir, uploaded_file.name)
-                    with open(file_path, "wb") as f: f.write(uploaded_file.getbuffer())
-                    if uploaded_file.name.endswith(('.zip', '.ZIP')):
-                        with zipfile.ZipFile(file_path, 'r') as zip_ref:
-                            zip_ref.extractall(temp_dir)
-                            for root, dirs, files_in_dir in os.walk(temp_dir):
-                                for file in files_in_dir:
-                                    if file.endswith(('.dat', '.txt', '.DAT', '.TXT')): file_paths.append(os.path.join(root, file))
-                    else: file_paths.append(file_path)
-
-                if not file_paths: st.error("❌ Tidak ada file .dat yang valid ditemukan.")
-                else:
-                    df_existing = load_data_from_google_sheets()
-                    process_and_save_data(file_paths, method, df_existing)
-
-with tab_histori:
-    st.header("☁️ Basis Data Fotometri Terpusat")
-    if st.button("🔄 Sinkronisasi"): st.rerun()
-    df_cloud = load_data_from_google_sheets()
-    if df_cloud.empty: st.info("Basis data kosong.")
+    if not file_paths:
+        print("Selesai: Tidak ada file yang ditemukan.")
     else:
-        st.dataframe(
-            df_cloud, 
-            use_container_width=True,
-            column_config={
-                "Link_Grafik": st.column_config.LinkColumn("Link Grafik", display_text="🖼️ Lihat Grafik Plot"),
-                "Link_DataMentah": st.column_config.LinkColumn("Link Data Mentah", display_text="📁 Buka File Mentah")
-            }
-        )
-        st.download_button("⬇️ Unduh CSV", df_cloud.to_csv(index=False).encode('utf-8'), 'Rekap_Kawakib_Cloud.csv', 'text/csv')
-
-with tab_dashboard:
-    st.header("📊 Ringkasan Statistik & Kalibrasi Standar Kemenag")
-    df_stat = load_data_from_google_sheets()
-    
-    if not df_stat.empty:
-        df_stat['Fajar_Alt'] = pd.to_numeric(df_stat['Fajar_Alt'], errors='coerce')
-        df_stat['Awan_%'] = pd.to_numeric(df_stat['Awan_%'], errors='coerce')
-        df_stat['Garis_Dasar'] = pd.to_numeric(df_stat['Garis_Dasar'], errors='coerce')
-        # Tarik kolom awan satelit dengan aman (jika belum ada di sheet lama)
-        df_stat['Awan_Satelit_%'] = pd.to_numeric(df_stat.get('Awan_Satelit_%', pd.Series(dtype=float)), errors='coerce')
-        
-        if 'Kota' not in df_stat.columns and 'Lokasi' in df_stat.columns:
-            df_stat['Kota'] = df_stat['Lokasi'].apply(lambda x: re.split(r'[-,\|]', str(x))[-1].strip())
-            
-        # FILTER KEMENAG IDEAL DIREVISI: Langit >= 20.5 mpsas, Awan SQM <= 5%, Tanpa Koreksi Bulan
-        df_kemenag_ideal = df_stat[
-            (df_stat['Garis_Dasar'] >= 20.5) & 
-            (df_stat['Awan_%'] <= 5.0) & 
-            (df_stat['Koreksi_Bulan'] == 'Pasif')
-        ]
-        
-        rata_rata_kemenag = df_kemenag_ideal['Fajar_Alt'].mean() if not df_kemenag_ideal.empty else 0.0
-        rata_rata_total = df_stat['Fajar_Alt'].mean()
-        
-        standar_kemenag = -20.0
-        selisih_kemenag = rata_rata_kemenag - standar_kemenag
-        selisih_total = rata_rata_total - standar_kemenag
-        
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Total Data Keseluruhan", len(df_stat))
-        c2.metric("Rata-rata Standar Kemenag (Ideal)", f"{rata_rata_kemenag:.2f}°", f"{selisih_kemenag:+.2f}° dari -20°", delta_color="inverse")
-        c3.metric("Total Rata-rata (Pembanding)", f"{rata_rata_total:.2f}°", f"{selisih_total:+.2f}° dari -20°", delta_color="inverse")
-        c4.metric("Data Ideal Tersaring", len(df_kemenag_ideal))
-        
-        st.divider()
-        st.subheader("📉 Komparasi Kedalaman Fajar per Kota (Filter Standar Kemenag: Garis Dasar ≥ 20.5 Mpsas)")
-        
-        df_loc = df_kemenag_ideal.groupby('Kota')['Fajar_Alt'].mean().dropna().reset_index()
-        if df_loc.empty:
-            df_loc = df_stat.groupby('Kota')['Fajar_Alt'].mean().dropna().reset_index()
-            st.warning("Perhatian: Belum ada data yang memenuhi kriteria ideal Kemenag (Langit ≥ 20.5 Mpsas & Bersih). Grafik di bawah menampilkan seluruh rata-rata data yang tersedia.")
-        
-        if not df_loc.empty:
-            bar_chart = alt.Chart(df_loc).mark_bar(color='#1D9A9C', cornerRadiusTopLeft=3, cornerRadiusTopRight=3).encode(
-                x=alt.X('Kota:N', title='Lokasi Pengamatan', sort='y'),
-                y=alt.Y('Fajar_Alt:Q', title='Rata-rata Kedalaman (°)', scale=alt.Scale(domain=[-22, -15])),
-                tooltip=['Kota', alt.Tooltip('Fajar_Alt:Q', format='.2f', title='Fajar (°)')]
-            )
-            kemenag_line = alt.Chart(pd.DataFrame({'Standar': [standar_kemenag]})).mark_rule(
-                color='#d9534f', strokeWidth=2, strokeDash=[5, 5]
-            ).encode(y='Standar:Q')
-            kemenag_label = alt.Chart(pd.DataFrame({'Standar': [standar_kemenag], 'Label': ['Standar Kemenag (-20°)']})).mark_text(
-                color='#d9534f', align='left', baseline='bottom', dx=5, dy=-5, fontSize=12, fontWeight='bold'
-            ).encode(y='Standar:Q', text='Label:N')
-            
-            st.altair_chart(bar_chart + kemenag_line + kemenag_label, use_container_width=True)
-        else:
-            st.info("Data fajar yang valid belum tersedia untuk memuat grafik komparasi.")
-
-        st.divider()
-        st.subheader("🌍 Analisis Spasial & Faktor Lingkungan")
-        
-        if 'Lintang' in df_stat.columns and 'Bujur' in df_stat.columns:
-            df_map = df_stat.dropna(subset=['Lintang', 'Bujur', 'Fajar_Alt']).copy()
-            if not df_map.empty:
-                df_map['lat'] = pd.to_numeric(df_map['Lintang'], errors='coerce')
-                df_map['lon'] = pd.to_numeric(df_map['Bujur'], errors='coerce')
-                df_map_agg = df_map.groupby(['Kota', 'lat', 'lon']).agg(
-                    Fajar_Rata2=('Fajar_Alt', 'mean'),
-                    Total_Observasi=('Fajar_Alt', 'count')
-                ).reset_index()
+        df_existing = load_data_from_google_sheets()
+        for idx, path in enumerate(file_paths):
+            print(f"[{idx+1}/{len(file_paths)}] Memproses: {os.path.basename(path)}")
+            try:
+                am, site, lat, lon, utc_offset, date_str = load_sqm_data(path)
+                if am.empty: continue
                 
-                col_map, col_tab = st.columns([1, 1])
-                with col_map:
-                    st.markdown("**Peta Persebaran Titik Observasi**")
-                    st.map(df_map_agg[['lat', 'lon']], zoom=4, use_container_width=True)
-                with col_tab:
-                    st.markdown("**Tabel Deviasi Kemenag per Koordinat**")
-                    df_tabel = df_map_agg.rename(columns={'lat': 'Lintang', 'lon': 'Bujur', 'Fajar_Rata2': 'Rata-rata Fajar (°)'})
-                    df_tabel['Deviasi dari Kemenag'] = df_tabel['Rata-rata Fajar (°)'] - (-20.0)
-                    st.dataframe(df_tabel.style.format({'Rata-rata Fajar (°)': '{:.2f}', 'Deviasi dari Kemenag': '{:+.2f}'}), use_container_width=True)
-        
-        st.write("")
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown("**Berdasarkan Polusi Cahaya (Bortle)**")
-            st.bar_chart(df_stat.groupby('Bortle')['Fajar_Alt'].mean().dropna())
-        with col2:
-            st.markdown("**Berdasarkan Koreksi Bulan**")
-            st.bar_chart(df_stat.groupby('Koreksi_Bulan')['Fajar_Alt'].mean().dropna())
-            
-    else: st.info("Belum ada data untuk dianalisis.")
+                am, is_corrected = apply_moonlight_correction(am, lat, lon, utc_offset)
+                bin_deg, n_consec = get_dynamic_params(am)
+                if method == "SIGMAG-STAB": onset_alt, onset_msas = analyze_sigmag(am, bin_deg, n_consec)
+                else: onset_alt, onset_msas = analyze_sigmoid(am)
+                
+                cloud_pct, df_win = analyze_cloud_cover(am, onset_alt, window_minutes=15)
+                sat_cloud_pct = get_satellite_cloud_cover(lat, lon, date_str) 
+                
+                base_series = am[am["sun_alt"] < -20]["mpsas_corrected"]
+                baseline_mpsas = base_series.median() if not base_series.empty else am["mpsas_corrected"].max()
+                lp_category, _ = categorize_light_pollution(baseline_mpsas)
+                kota = re.split(r'[-,\|]', site)[-1].strip()
+                
+                plot_url, raw_url = "", ""
+                if not df_existing.empty and {"Tanggal", "Lokasi", "Metode"}.issubset(df_existing.columns):
+                    match = df_existing[(df_existing["Tanggal"].astype(str).str.strip() == str(date_str)) & (df_existing["Lokasi"].astype(str).str.strip() == str(site)) & (df_existing["Metode"].astype(str).str.strip() == str(method))]
+                    if not match.empty:
+                        plot_url = str(match.iloc[0].get("Link_Grafik", "")).strip()
+                        raw_url = str(match.iloc[0].get("Link_DataMentah", "")).strip()
 
-with tab_algoritma:
-    st.header("📖 Metodologi, Landasan Matematis & Spesifikasi Algoritma Fajar Sadiq")
-    st.markdown(r"""
-    Aplikasi **Kawakib SQM Fajar Analyzer** ini dikembangkan sebagai instrumen riset tingkat lanjut untuk memproses data deret waktu (*time-series*) fotometri langit malam secara otonom. Pendekatan yang digunakan merupakan amalgamasi dari ilmu astrometri presisi tinggi, pemrosesan sinyal digital (*digital signal processing*), serta kalibrasi empiris astronomi Islam yang merujuk pada standar hisab awal waktu Subuh Kementerian Agama Republik Indonesia (**Solar Depression Angle: -20°**).
-    """)
-    
-    with st.expander("1. Pra-Pemrosesan Astrometri & Filtrasi Fotometri", expanded=False):
-        st.markdown(r"""
-        Data mentah yang digunakan bersumber dari sensor *Unihedron Sky Quality Meter* (SQM-LE/LU) dengan format ekstensi `.dat`.
-        * **Kalkulasi Ketinggian Matahari:** Mengonversi waktu lokal ke *Julian Date* (JD), menghitung anomali rata-rata, bujur ekliptika, deklinasi matahari, hingga *Local Hour Angle* melalui persamaan trigonometri bola langit.
-        * **Savitzky-Golay *Smoothing Filter*:** Mengaplikasikan filter dengan rentang jendela 31 data poin dan polinomial orde ke-2 untuk meratakan (*smooth*) fluktuasi tanpa menggeser fase waktu (*phase-shift*).
-        * **Koreksi Kontaminasi Cahaya Bulan:** Jika altitude bulan $> 0^\circ$ dan fase iluminasi melampaui ambang $5\%$, kontribusi fluks bulan dikurangkan secara fisis.
-        """)
-
-    with st.expander("2. Algoritma SIGMAG-STAB (Sigmoid Gradient - Stabilization)") :
-        st.markdown(r"""
-        Metode utama deteksi fajar otonom di Kawakib.
-        * **Konstruksi Baseline & MAD:** Rata-rata gradien pada kondisi malam absolut (ketinggian matahari $\le -20^\circ$) dijadikan sebagai standar *baseline*. Ambang batas menggunakan *Median Absolute Deviation* (MAD) agar kebal terhadap pencilan awan.
-        * **Syarat Konsekutif Titik Belok:** Titik fajar sadiq (*onset*) didefinisikan *hanya jika* gradien pembacaan meluncur turun melewati ambang secara terus-menerus (*consecutive*) sepanjang $N$ data pembacaan beruntun.
-        """)
-
-    with st.expander("3. Validasi Cuaca Multi-Layer (Internal SQM & Satelit Global)"):
-        st.markdown(r"""
-        Agar data empiris yang dihasilkan *reliable* dan teruji mutlak, algoritma ini dikawinkan dengan validasi ganda:
-        1. **Sensor Awan Internal (Volatilitas SQM):** Mendeteksi fluktuasi awan menggunakan *Rolling Standard Deviation* dengan jendela 60 menit di sekitar titik fajar.
-        2. **Validasi Satelit Eksternal (Open-Meteo):** Sistem secara otonom menyedot data arsip satelit cuaca global untuk menarik persentase presisi tutupan awan (*Cloud Cover*) tepat di koordinat pos pengamatan pada jam 03.00 - 05.00 pagi waktu lokal. Hal ini menghasilkan bukti tak terbantahkan jika langit fajar memang benar-benar cerah (0-5% awan).
-        """)
+                if not plot_url or not raw_url:
+                    fig, ax = plt.subplots(figsize=(10, 5))
+                    ax.plot(am["sun_alt"], am["mpsas_corrected"], color="#1A3C40", alpha=0.8, linewidth=1.5, label="SQM Terkoreksi")
+                    if is_corrected: ax.plot(am["sun_alt"], am["mpsas"], color="#808080", alpha=0.4, linestyle=":", label="SQM Mentah")
+                    if onset_alt is not None:
+                        ax.axvline(onset_alt, color="#1D9A9C", linestyle="--", linewidth=2, label=f"Titik Belok ({onset_alt:.2f}°)")
+                        ax.scatter([onset_alt], [onset_msas], color="#1D9A9C", s=60, zorder=5)
+                    cloudy_points = df_win[df_win['is_cloudy'] == True] if 'is_cloudy' in df_win.columns else pd.DataFrame()
+                    if not cloudy_points.empty: ax.scatter(cloudy_points["sun_alt"], cloudy_points["mpsas_corrected"], color="#d9534f", s=15, label="Indikasi Awan (SQM)", zorder=4)
+                    ax.invert_yaxis()
+                    ax.set_xlim(-30, -5)
+                    ax.set_xlabel("Ketinggian Matahari (Derajat)", fontweight='bold')
+                    ax.set_ylabel("Kecerlangan Langit (Mpsas)", fontweight='bold')
+                    ax.set_title(f"{site} | {date_str} [{method}]", color="#1A3C40", fontweight='bold')
+                    ax.grid(True, linestyle=":", alpha=0.6)
+                    onset_str = f"{onset_alt:.2f}°" if onset_alt is not None else "Tidak Ditemukan"
+                    sat_str = f"{sat_cloud_pct:.1f}%" if sat_cloud_pct is not None else "N/A"
+                    info_text = (f"Garis Dasar : {baseline_mpsas:.2f} Mpsas\n"
+                                 f"Awan SQM/Sat: {cloud_pct:.1f}% / {sat_str}\n"
+                                 f"Fase Bulan  : {'Aktif' if is_corrected else 'Pasif'}\n"
+                                 f"Fajar Sadiq : {onset_str}")
+                    props = dict(boxstyle='round', facecolor='#F8F9FA', alpha=0.9, edgecolor='#1A3C40')
+                    ax.text(0.02, baseline_mpsas - 1.2, info_text, transform=ax.get_yaxis_transform(), fontsize=9, verticalalignment='bottom', bbox=props, family='monospace')
+                    ax.legend(loc="upper right")
+                    if not plot_url: plot_url = upload_plot_to_cloudinary(fig, f"Plot_{site}_{date_str}_{method}".replace(" ", "_"))
+                    if not raw_url: raw_url = upload_raw_to_cloudinary(path, f"Raw_{site}_{date_str}_{method}.dat".replace(" ", "_"))
+                    plt.close(fig)
+                
+                save_to_google_sheets({
+                    "Tanggal": date_str, "Kota": kota, "Lokasi": site, 
+                    "Lintang": lat, "Bujur": lon, 
+                    "Metode": method, "Bortle": lp_category.split("(")[-1].replace(")",""),
+                    "Awan_%": round(cloud_pct, 1), 
+                    "Awan_Satelit_%": sat_cloud_pct if sat_cloud_pct is not None else "",
+                    "Koreksi_Bulan": "Aktif" if is_corrected else "Pasif",
+                    "Garis_Dasar": round(baseline_mpsas, 2), "Fajar_Alt": round(onset_alt, 2) if onset_alt is not None else "",
+                    "Fajar_MSAS": round(onset_msas, 2) if onset_msas is not None else "",
+                    "Link_Grafik": plot_url, "Link_DataMentah": raw_url 
+                })
+                print("--> Istirahat 3 detik...")
+                time.sleep(3) 
+            except Exception as e:
+                print(f"--> [GAGAL] Error {os.path.basename(path)}: {e}")
+                time.sleep(3) 
