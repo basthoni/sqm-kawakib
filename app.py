@@ -598,4 +598,45 @@ with tab_dashboard:
 
 with tab_algoritma:
     st.header("📖 Metodologi, Landasan Matematis & Spesifikasi Algoritma")
-    st.markdown("Aplikasi ini menggunakan kombinasi Astrometri, Digital Signal Processing, dan Radar Cuaca Terintegrasi.")
+    st.markdown(r"""
+    Aplikasi ini dibangun khusus sebagai instrumen riset falakiyah modern, menggabungkan rumusan astrometri klasik dengan pemrosesan sinyal digital (*Digital Signal Processing*) dan validasi radar cuaca satelit.
+
+    Berikut adalah bedah algoritma dari pipa pemrosesan (*pipeline*) data Kawakib SQM Analyzer:
+
+    ### 1. Pra-pemrosesan & Koreksi Astrometri
+    Sebelum kurva dianalisis, data mentah dari sensor SQM akan dicuci (*cleaned*) dan disinkronkan dengan posisi benda langit sesungguhnya:
+    *   **Kalkulasi *Solar Altitude* (Ketinggian Matahari):** Sistem menghitung ulang secara presisi posisi matahari pada setiap detik pengamatan berdasarkan titik koordinat geografis pengamat (Lintang & Bujur) menggunakan algoritma mekanika langit, bukan sekadar mengandalkan waktu lokal alat.
+    *   **Koreksi Kontaminasi Cahaya Bulan (*Moonlight Rejection*):** Menggunakan modul Ephemeris, sistem melacak posisi dan fase bulan. Jika bulan berada di atas ufuk (Altitude $> 0^\circ$) dan fasenya $> 5\%$, algoritma otomatis memotong ekses kontaminasi cahaya bulan dari kurva SQM menggunakan Hukum Pogson.
+
+    ### 2. Algoritma Pendeteksi Titik Belok Fajar
+    Sistem menyediakan dua pendekatan matematis otonom untuk mendeteksi *onset* (titik awal) fajar sadiq tanpa bias mata manusia:
+
+    #### A. Metode SIGMAG-STAB (*Smoothed Gradient-MAD Stability*) - **[Direkomendasikan]**
+    Metode analitik ini mencari titik eksak di mana laju perubahan cahaya mulai menyimpang secara definitif dari kestabilan malam.
+    1.  ***Smoothing* (Pelembutan Sinyal):** Filter *Savitzky-Golay* (Orde 2) diterapkan untuk menghaluskan derau mikrokosmik (*noise*) tanpa merusak integritas kurva asli.
+    2.  ***Dynamic Binning*:** Data dikelompokkan secara dinamis beradaptasi dengan interval waktu rekam alat (1 detik hingga 5 menit).
+    3.  **Analisis Turunan Pertama (*First Derivative*):** Menghitung nilai perubahan kecerlangan terhadap setiap $1^\circ$ pergerakan matahari.
+    4.  ***Thresholding* Berbasis MAD:** Sistem mendefinisikan *Baseline Gradient* pada saat matahari berada di kedalaman $\le -20^\circ$. Standar deviasi dihitung menggunakan *Median Absolute Deviation* (MAD) yang sangat kebal terhadap pencilan data (*outlier*).
+    5.  **Ekstraksi Titik Belok:** Fajar ditetapkan sah saat gradien cahaya menembus batas deviasi absolut secara berturut-turut dalam *n-langkah* pembacaan.
+
+    #### B. Metode SIGMOID (*Curve Fitting*)
+    Pendekatan *Machine Learning* yang memaksa kurva cahaya malam hari untuk membentuk fungsi logistik S-Curve:
+    $$f(x) = \frac{L}{1 + e^{-k(x - x_0)}} + b$$
+    Titik belok dihitung saat kurva hasil *fitting* (penyelarasan) mulai menyimpang dari garis asimtot malam aslinya. Sangat presisi untuk data yang sangat mulus, namun rentan bias jika ada anomali cahaya di horizon.
+
+    ### 3. Validasi Lingkungan Cerdas (*Smart Cloud & Satellite Validation*)
+    Untuk memastikan fajar tidak tertunda oleh awan, aplikasi menerapkan filter validasi mikro dan makro:
+    *   **Validasi Mikro (Sensor SQM - *Jendela Kritis $\pm 15$ Menit*):** 
+        Alih-alih merata-rata data semalaman penuh, algoritma membidik fokus **hanya 15 menit sebelum hingga 15 menit sesudah** titik belok fajar ditemukan. Sistem menghitung *Rolling Standard Deviation* pada rentang sempit tersebut. Jika fluktuasi melebihi batas dinamis, observasi dilabeli "Banyak Awan".
+    *   **Validasi Makro (Satelit Open-Meteo):**
+        Sistem mengirim titik kordinat (*Reverse Geocoding*) ke API Satelit Cuaca Global untuk menanyakan persentase tutupan awan dari luar angkasa tepat pada jam terjadinya fajar. Ini berfungsi mematahkan ilusi "stabilitas palsu" yang sering mengecoh sensor lokal saat tertutup awan *stratus* pekat.
+
+    ### 4. Klasifikasi Polusi Cahaya (*Bortle-like Scale*)
+    Garis Dasar (*Baseline*) dihitung dari median kecerlangan tertinggi sebelum fajar. Sistem mengkategorikannya menjadi:
+    *   **$\ge 21.3$ Mpsas:** Langit Gelap (Tipe 1)
+    *   **$20.2 - 21.29$ Mpsas:** Langit Agak Gelap (Tipe 2)
+    *   **$19.1 - 20.19$ Mpsas:** Langit Agak Terang (Tipe 3)
+    *   **$< 19.1$ Mpsas:** Langit Terang / Urban (Tipe 4)
+
+    > ⚠️ **Kalibrasi Kemenag Ideal:** Sistem hanya mengizinkan data dengan Garis Dasar $\ge 20.5$ Mpsas, tanpa kontaminasi bulan, dan dengan deteksi awan lokal $\le 5\%$ (di jendela kritis $\pm 15$ menit) untuk dihitung ke dalam **Rata-rata Standar Ideal Kemenag**.
+    """)
