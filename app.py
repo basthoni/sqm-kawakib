@@ -37,7 +37,6 @@ KAWAKIB_LOGO_URL = "https://lh3.googleusercontent.com/d/1aoTDRdL-wS8EPytGGZ7dsJY
 GSHEETS_PERMANEN_URL = "https://docs.google.com/spreadsheets/d/1E4RpTfcPeQorW3r9cjpZ5cp31dpa7N_oXRZksRWdxG4/edit?gid=0#gid=0"
 SAMPLE_DATA_DRIVE_URL = "https://drive.google.com/drive/folders/1KHg8dRtkt9KrdDFZ8esbiuHQtKJvP2AN?usp=drive_link"
 
-# --- INJEKSI CSS BERSIH & FIX DROPDOWN + IKON SIDEBAR ---
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,600;1,400&family=Inter:wght@300;400;600&display=swap');
@@ -54,7 +53,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # =====================================================================
-# FUNGSI BACKEND (CLOUD & MATEMATIKA)
+# FUNGSI BACKEND (CLOUD, API & REVERSE GEOCODING)
 # =====================================================================
 try:
     cloudinary.config(
@@ -64,6 +63,20 @@ try:
         secure=True
     )
 except: pass
+
+def get_city_from_coords(lat, lon):
+    if lat is None or lon is None: return "Unknown"
+    try:
+        url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={lat}&lon={lon}&zoom=10&addressdetails=1"
+        req = urllib.request.Request(url, headers={'User-Agent': 'Kawakib-SQM-Analyzer/1.0'})
+        with urllib.request.urlopen(req, timeout=5) as response:
+            data = json.loads(response.read())
+            address = data.get('address', {})
+            city = address.get('city') or address.get('county') or address.get('state_district') or address.get('town') or address.get('village')
+            if city:
+                return city.replace("Kabupaten ", "").replace("Kota ", "")
+    except: pass
+    return "Unknown"
 
 def upload_plot_to_cloudinary(fig, filename):
     try:
@@ -106,7 +119,6 @@ def save_to_google_sheets(data_dict):
             if key not in headers:
                 headers.append(key)
                 new_headers_added = True
-                
         if new_headers_added:
             sheet.update(range_name='A1', values=[headers])
             
@@ -133,9 +145,7 @@ def save_to_google_sheets(data_dict):
         else: 
             sheet.append_row(values)
         return True
-    except Exception as e:
-        print(f"Error saving to sheets: {e}")
-        return False
+    except: return False
 
 def load_data_from_google_sheets():
     client = get_gsheets_client()
@@ -155,30 +165,19 @@ def sync_from_soof_drive():
         while True:
             results = service.files().list(
                 q="mimeType != 'application/vnd.google-apps.folder' and (name contains '.dat' or name contains '.DAT' or name contains '.txt') and trashed = false",
-                fields="nextPageToken, files(id, name)",
-                pageSize=1000,
-                pageToken=page_token
+                fields="nextPageToken, files(id, name)", pageSize=1000, pageToken=page_token
             ).execute()
             files = results.get('files', [])
-            
             for file in files:
                 file_path = os.path.join(tempfile.gettempdir(), file['name'])
                 request = service.files().get_media(fileId=file['id'])
-                with open(file_path, "wb") as f:
-                    f.write(request.execute())
+                with open(file_path, "wb") as f: f.write(request.execute())
                 downloaded_paths.append(file_path)
-                
             page_token = results.get('nextPageToken', None)
-            if page_token is None:
-                break
-    except Exception as e:
-        st.error(f"Error accessing Google Drive: {e}")
-        
+            if page_token is None: break
+    except: pass
     return downloaded_paths
 
-# =====================================================================
-# INTEGRASI API SATELIT CUACA (OPEN-METEO)
-# =====================================================================
 def get_satellite_cloud_cover(lat, lon, date_str):
     try:
         url = f"https://archive-api.open-meteo.com/v1/archive?latitude={lat}&longitude={lon}&start_date={date_str}&end_date={date_str}&hourly=cloudcover&timezone=auto"
@@ -189,7 +188,6 @@ def get_satellite_cloud_cover(lat, lon, date_str):
             valid = [c for c in clouds[3:6] if c is not None]
             if valid: return round(sum(valid)/len(valid), 1)
     except: pass
-    
     try:
         url2 = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&start_date={date_str}&end_date={date_str}&hourly=cloudcover&timezone=auto"
         req2 = urllib.request.Request(url2, headers={'User-Agent': 'Mozilla/5.0'})
@@ -271,17 +269,14 @@ def apply_moonlight_correction(am, lat, lon, utc_offset):
     am["mpsas_corrected"] = corrected_mpsas
     return am, is_corrected
 
-# --- FILTER AWAN HANYA ±15 MENIT DARI TITIK BELOK ---
 def analyze_cloud_cover(am, onset_alt, window_minutes=15):
     if onset_alt is None: return 0.0, pd.DataFrame()
     onset_idx = (np.abs(am["sun_alt"] - onset_alt)).argmin()
     onset_dt = am["local_dt"].iloc[onset_idx]
     
-    # Memotong data tepat 15 menit sebelum hingga 15 menit sesudah
     mask = (am["local_dt"] >= onset_dt - pd.Timedelta(minutes=window_minutes)) & (am["local_dt"] <= onset_dt + pd.Timedelta(minutes=window_minutes))
     df_win = am[mask].copy()
     
-    # Menyesuaikan ukuran rolling standar deviasi agar tidak error pada jendela sempit
     r_win = min(11, len(df_win) if len(df_win) % 2 != 0 else len(df_win)-1)
     if r_win < 3: return 0.0, df_win
     
@@ -367,9 +362,14 @@ def process_and_save_data(file_paths, method, df_existing):
             
             base_series = am[am["sun_alt"] < -20]["mpsas_corrected"]
             baseline_mpsas = base_series.median() if not base_series.empty else am["mpsas_corrected"].max()
-            lp_category, expected_alt = categorize_light_pollution(baseline_mpsas)
+            lp_category, _ = categorize_light_pollution(baseline_mpsas)
             
-            kota = re.split(r'[-,\|]', site)[-1].strip()
+            # --- AUTO GEOCODING ---
+            kota_akurat = get_city_from_coords(lat, lon)
+            if kota_akurat == "Unknown":
+                kota = re.split(r'[-,\|]', site)[-1].strip()
+            else:
+                kota = kota_akurat
             
             fig, ax = plt.subplots(figsize=(10, 5))
             ax.plot(am["sun_alt"], am["mpsas_corrected"], color="#1A3C40", alpha=0.8, linewidth=1.5, label="SQM Terkoreksi")
@@ -519,9 +519,9 @@ with tab_dashboard:
         if 'Kota' not in df_stat.columns and 'Lokasi' in df_stat.columns:
             df_stat['Kota'] = df_stat['Lokasi'].apply(lambda x: re.split(r'[-,\|]', str(x))[-1].strip())
             
-        # --- UPDATE FILTER: GARIS DASAR DITURUNKAN KE >= 20.0 AGAR DATA PINGGIR KOTA MASUK ---
+        # --- UPDATE: FILTER DIKEMBALIKAN KE >= 20.5 MPSAS ---
         df_kemenag_ideal = df_stat[
-            (df_stat['Garis_Dasar'] >= 20.0) & 
+            (df_stat['Garis_Dasar'] >= 20.5) & 
             (df_stat['Awan_%'] <= 5.0) & 
             (df_stat['Koreksi_Bulan'] == 'Pasif')
         ]
@@ -536,11 +536,11 @@ with tab_dashboard:
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Total Data Keseluruhan", len(df_stat))
         c2.metric("Rata-rata Standar Kemenag (Ideal)", f"{rata_rata_kemenag:.2f}°", f"{selisih_kemenag:+.2f}° dari -20°", delta_color="inverse")
-        c3.metric("Total Rata-rata (Pembanding)", f"{rata_rata_total:.2f}°", f"{selisih_total:+.2f}° dari -20°", delta_color="inverse")
+        c3.metric("Total Rata-rata (PemPembanding)", f"{rata_rata_total:.2f}°", f"{selisih_total:+.2f}° dari -20°", delta_color="inverse")
         c4.metric("Data Ideal Tersaring", len(df_kemenag_ideal))
         
         st.divider()
-        st.subheader("📉 Komparasi Kedalaman Fajar per Kota (Filter Standar Kemenag: Garis Dasar ≥ 20.0 Mpsas)")
+        st.subheader("📉 Komparasi Kedalaman Fajar per Kota (Filter Standar Kemenag: Garis Dasar ≥ 20.5 Mpsas)")
         
         df_loc = df_kemenag_ideal.groupby('Kota')['Fajar_Alt'].mean().dropna().reset_index()
         if df_loc.empty:
