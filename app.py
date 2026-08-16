@@ -508,16 +508,16 @@ with tab_histori:
         st.download_button("⬇️ Unduh CSV", df_cloud.to_csv(index=False).encode('utf-8'), 'Rekap_Kawakib_Cloud.csv', 'text/csv')
 
 # =====================================================================
-# MENU UTAMA: STATISTIK & ANALISIS (3 SUB-TAB DENGAN TABEL DETAIL ANOMALI)
+# MENU UTAMA: STATISTIK & ANALISIS (3 SUB-TAB DENGAN JUDUL BERSIH)
 # =====================================================================
 with tab_statistik_utama:
     st.header("📊 Pusat Analisis Statistik & Korelasi Variabel")
     st.markdown("Pusat komparasi mendalam antara data ideal Kemenag, data anomali lingkungan, serta regresi korelasi variabel astrometri.")
     
     sub_ideal, sub_anomali, sub_korelasi = st.tabs([
-        "🌟 Sub-Tab 1: Data Ideal (Kemenag)", 
-        "⚠️ Sub-Tab 2: Data Anomali & Pemeriksaan", 
-        "📈 Sub-Tab 3: Korelasi Variabel"
+        "🌟 Data Ideal (Kemenag)", 
+        "⚠️ Data Anomali & Pemeriksaan", 
+        "📈 Korelasi Variabel"
     ])
     
     df_stat = load_data_from_google_sheets()
@@ -546,16 +546,6 @@ with tab_statistik_utama:
             c1.metric("Total Data Keseluruhan", len(df_stat))
             c2.metric("Rata-rata Standar Kemenag (Ideal)", f"{rata_rata_kemenag:.2f}°", f"{rata_rata_kemenag - (-20.0):+.2f}° dari -20°", delta_color="inverse")
             c3.metric("Data Ideal Tersaring", len(df_kemenag_ideal))
-            
-            st.markdown(f"<br><b>Distribusi {len(df_kemenag_ideal)} Data Ideal Berdasarkan Kecerlangan Langit (Garis Dasar):</b>", unsafe_allow_html=True)
-            df_bin1 = df_kemenag_ideal[(df_kemenag_ideal['Garis_Dasar'] >= 20.5) & (df_kemenag_ideal['Garis_Dasar'] < 21.0)]
-            df_bin2 = df_kemenag_ideal[(df_kemenag_ideal['Garis_Dasar'] >= 21.0) & (df_kemenag_ideal['Garis_Dasar'] < 21.5)]
-            df_bin3 = df_kemenag_ideal[df_kemenag_ideal['Garis_Dasar'] >= 21.5]
-            
-            bc1, bc2, bc3 = st.columns(3)
-            bc1.info(f"**20.50 – 20.99 Mpsas:** \n### {len(df_bin1)} Data ({df_bin1['Fajar_Alt'].mean():.2f}°)" if not df_bin1.empty else "**20.50 – 20.99 Mpsas:** \n### 0 Data (-)")
-            bc2.info(f"**21.00 – 21.49 Mpsas:** \n### {len(df_bin2)} Data ({df_bin2['Fajar_Alt'].mean():.2f}°)" if not df_bin2.empty else "**21.00 – 21.49 Mpsas:** \n### 0 Data (-)")
-            bc3.info(f"**≥ 21.50 Mpsas:** \n### {len(df_bin3)} Data ({df_bin3['Fajar_Alt'].mean():.2f}°)" if not df_bin3.empty else "**≥ 21.50 Mpsas:** \n### 0 Data (-)")
             
             st.markdown(f"<br><b>Distribusi {len(df_kemenag_ideal)} Data Ideal Berdasarkan Kedalaman Fajar (Titik Belok):</b>", unsafe_allow_html=True)
             df_fajar1 = df_kemenag_ideal[df_kemenag_ideal['Fajar_Alt'] <= -19.5]
