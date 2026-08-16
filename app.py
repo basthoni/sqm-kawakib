@@ -145,9 +145,7 @@ def save_to_google_sheets(data_dict):
         else: 
             sheet.append_row(values)
         return True
-    except Exception as e:
-        print(f"Error saving to sheets: {e}")
-        return False
+    except: return False
 
 def load_data_from_google_sheets():
     client = get_gsheets_client()
@@ -467,7 +465,10 @@ st.markdown(f"""
     </p>
 """, unsafe_allow_html=True)
 
-tab_analisis, tab_histori, tab_dashboard, tab_algoritma = st.tabs(["🚀 Analisis Data", "☁️ Basis Data Cloud", "📊 Dashboard Statistik", "📖 Metodologi & Algoritma"])
+# --- STRUKTUR UTAMA DENGAN 4 TAB UTAMA ---
+tab_analisis, tab_histori, tab_statistik_utama, tab_algoritma = st.tabs([
+    "🚀 Analisis Data", "☁️ Basis Data", "📊 Statistik & Analisis", "📖 Metodologi & Algoritma"
+])
 
 with tab_analisis:
     uploaded_files = st.file_uploader("Unggah File Data Observasi Secara Manual", accept_multiple_files=True, type=['dat', 'DAT', 'txt', 'TXT', 'zip', 'ZIP'])
@@ -507,8 +508,19 @@ with tab_histori:
         )
         st.download_button("⬇️ Unduh CSV", df_cloud.to_csv(index=False).encode('utf-8'), 'Rekap_Kawakib_Cloud.csv', 'text/csv')
 
-with tab_dashboard:
-    st.header("📊 Ringkasan Statistik & Kalibrasi Standar Kemenag")
+# =====================================================================
+# MENU UTAMA: STATISTIK & ANALISIS (BERISI 3 SUB-TAB: IDEAL, ANOMALI, KORELASI)
+# =====================================================================
+with tab_statistik_utama:
+    st.header("📊 Pusat Analisis Statistik & Korelasi Variabel")
+    st.markdown("Pusat komparasi mendalam antara data ideal Kemenag, data anomali lingkungan, serta regresi korelasi variabel astrometri.")
+    
+    sub_ideal, sub_anomali, sub_korelasi = st.tabs([
+        "🌟 Sub-Tab 1: Data Ideal (Kemenag)", 
+        "⚠️ Sub-Tab 2: Data Anomali", 
+        "📈 Sub-Tab 3: Korelasi Variabel"
+    ])
+    
     df_stat = load_data_from_google_sheets()
     
     if not df_stat.empty:
@@ -526,115 +538,108 @@ with tab_dashboard:
             (df_stat['Koreksi_Bulan'] == 'Pasif')
         ]
         
-        rata_rata_kemenag = df_kemenag_ideal['Fajar_Alt'].mean() if not df_kemenag_ideal.empty else 0.0
-        rata_rata_total = df_stat['Fajar_Alt'].mean()
-        
-        standar_kemenag = -20.0
-        selisih_kemenag = rata_rata_kemenag - standar_kemenag
-        selisih_total = rata_rata_total - standar_kemenag
-        
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Total Data Keseluruhan", len(df_stat))
-        c2.metric("Rata-rata Standar Kemenag (Ideal)", f"{rata_rata_kemenag:.2f}°", f"{selisih_kemenag:+.2f}° dari -20°", delta_color="inverse")
-        c3.metric("Total Rata-rata (Pembanding)", f"{rata_rata_total:.2f}°", f"{selisih_total:+.2f}° dari -20°", delta_color="inverse")
-        c4.metric("Data Ideal Tersaring", len(df_kemenag_ideal))
-        
-        # --- BLOK 1: DISTRIBUSI BERDASARKAN KECERLANGAN (MPSAS) ---
-        st.markdown(f"<br><b>Distribusi {len(df_kemenag_ideal)} Data Ideal Berdasarkan Kecerlangan Langit (Garis Dasar):</b>", unsafe_allow_html=True)
-        
-        df_bin1 = df_kemenag_ideal[(df_kemenag_ideal['Garis_Dasar'] >= 20.5) & (df_kemenag_ideal['Garis_Dasar'] < 21.0)]
-        df_bin2 = df_kemenag_ideal[(df_kemenag_ideal['Garis_Dasar'] >= 21.0) & (df_kemenag_ideal['Garis_Dasar'] < 21.5)]
-        df_bin3 = df_kemenag_ideal[df_kemenag_ideal['Garis_Dasar'] >= 21.5]
-        
-        len1, len2, len3 = len(df_bin1), len(df_bin2), len(df_bin3)
-        mean1 = f"({df_bin1['Fajar_Alt'].mean():.2f}°)" if len1 > 0 else "(-)"
-        mean2 = f"({df_bin2['Fajar_Alt'].mean():.2f}°)" if len2 > 0 else "(-)"
-        mean3 = f"({df_bin3['Fajar_Alt'].mean():.2f}°)" if len3 > 0 else "(-)"
-        
-        bc1, bc2, bc3 = st.columns(3)
-        bc1.info(f"**20.50 – 20.99 Mpsas:** \n### {len1} Data {mean1}")
-        bc2.info(f"**21.00 – 21.49 Mpsas:** \n### {len2} Data {mean2}")
-        bc3.info(f"**≥ 21.50 Mpsas:** \n### {len3} Data {mean3}")
-        
-        # --- BLOK 2: DISTRIBUSI BERDASARKAN KEDALAMAN (FAJAR ALT) ---
-        st.markdown(f"<br><b>Distribusi {len(df_kemenag_ideal)} Data Ideal Berdasarkan Kedalaman Fajar (Titik Belok):</b>", unsafe_allow_html=True)
-        
-        # Menggunakan logika kedalaman: < -19.5 artinya lebih dalam secara minus (misal: -19.8, -20.2)
-        df_fajar1 = df_kemenag_ideal[df_kemenag_ideal['Fajar_Alt'] <= -19.5]
-        df_fajar2 = df_kemenag_ideal[(df_kemenag_ideal['Fajar_Alt'] > -19.5) & (df_kemenag_ideal['Fajar_Alt'] <= -19.0)]
-        df_fajar3 = df_kemenag_ideal[(df_kemenag_ideal['Fajar_Alt'] > -19.0) & (df_kemenag_ideal['Fajar_Alt'] <= -18.5)]
-        df_fajar4 = df_kemenag_ideal[df_kemenag_ideal['Fajar_Alt'] > -18.5]
-        
-        len_f1, len_f2, len_f3, len_f4 = len(df_fajar1), len(df_fajar2), len(df_fajar3), len(df_fajar4)
-        
-        mean_f1 = f"({df_fajar1['Fajar_Alt'].mean():.2f}°)" if len_f1 > 0 else "(-)"
-        mean_f2 = f"({df_fajar2['Fajar_Alt'].mean():.2f}°)" if len_f2 > 0 else "(-)"
-        mean_f3 = f"({df_fajar3['Fajar_Alt'].mean():.2f}°)" if len_f3 > 0 else "(-)"
-        mean_f4 = f"({df_fajar4['Fajar_Alt'].mean():.2f}°)" if len_f4 > 0 else "(-)"
-        
-        fc1, fc2, fc3, fc4 = st.columns(4)
-        fc1.success(f"**Lebih dalam dari -19.5°:** \n### {len_f1} Data {mean_f1}")
-        fc2.success(f"**-19.5° s/d -19.0°:** \n### {len_f2} Data {mean_f2}")
-        fc3.success(f"**-19.0° s/d -18.5°:** \n### {len_f3} Data {mean_f3}")
-        fc4.success(f"**Lebih dangkal dari -18.5°:** \n### {len_f4} Data {mean_f4}")
-        # ---------------------------------------------------------------
-        
-        st.divider()
-        st.subheader("📉 Komparasi Kedalaman Fajar per Kota (Filter Standar Kemenag: Garis Dasar ≥ 20.5 Mpsas)")
-        
-        df_loc = df_kemenag_ideal.groupby('Kota')['Fajar_Alt'].mean().dropna().reset_index()
-        if df_loc.empty:
-            df_loc = df_stat.groupby('Kota')['Fajar_Alt'].mean().dropna().reset_index()
-            st.warning("Perhatian: Belum ada data yang memenuhi kriteria ideal. Grafik di bawah menampilkan seluruh rata-rata data yang tersedia.")
-        
-        if not df_loc.empty:
-            bar_chart = alt.Chart(df_loc).mark_bar(color='#1D9A9C', cornerRadiusTopLeft=3, cornerRadiusTopRight=3).encode(
-                x=alt.X('Kota:N', title='Lokasi Pengamatan', sort='y'),
-                y=alt.Y('Fajar_Alt:Q', title='Rata-rata Kedalaman (°)', scale=alt.Scale(domain=[-22, -15])),
-                tooltip=['Kota', alt.Tooltip('Fajar_Alt:Q', format='.2f', title='Fajar (°)')]
-            )
-            kemenag_line = alt.Chart(pd.DataFrame({'Standar': [standar_kemenag]})).mark_rule(
-                color='#d9534f', strokeWidth=2, strokeDash=[5, 5]
-            ).encode(y='Standar:Q')
-            kemenag_label = alt.Chart(pd.DataFrame({'Standar': [standar_kemenag], 'Label': ['Standar Kemenag (-20°)']})).mark_text(
-                color='#d9534f', align='left', baseline='bottom', dx=5, dy=-5, fontSize=12, fontWeight='bold'
-            ).encode(y='Standar:Q', text='Label:N')
+        # --- SUB-TAB 1: IDEAL ---
+        with sub_ideal:
+            st.subheader("🌟 Analisis Data Ideal (Standar Kemenag)")
+            rata_rata_kemenag = df_kemenag_ideal['Fajar_Alt'].mean() if not df_kemenag_ideal.empty else 0.0
             
-            st.altair_chart(bar_chart + kemenag_line + kemenag_label, use_container_width=True)
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Total Data Keseluruhan", len(df_stat))
+            c2.metric("Rata-rata Standar Kemenag (Ideal)", f"{rata_rata_kemenag:.2f}°", f"{rata_rata_kemenag - (-20.0):+.2f}° dari -20°", delta_color="inverse")
+            c3.metric("Data Ideal Tersaring", len(df_kemenag_ideal))
+            
+            st.markdown(f"<br><b>Distribusi {len(df_kemenag_ideal)} Data Ideal Berdasarkan Kecerlangan Langit (Garis Dasar):</b>", unsafe_allow_html=True)
+            df_bin1 = df_kemenag_ideal[(df_kemenag_ideal['Garis_Dasar'] >= 20.5) & (df_kemenag_ideal['Garis_Dasar'] < 21.0)]
+            df_bin2 = df_kemenag_ideal[(df_kemenag_ideal['Garis_Dasar'] >= 21.0) & (df_kemenag_ideal['Garis_Dasar'] < 21.5)]
+            df_bin3 = df_kemenag_ideal[df_kemenag_ideal['Garis_Dasar'] >= 21.5]
+            
+            bc1, bc2, bc3 = st.columns(3)
+            bc1.info(f"**20.50 – 20.99 Mpsas:** \n### {len(df_bin1)} Data ({df_bin1['Fajar_Alt'].mean():.2f}°)" if not df_bin1.empty else "**20.50 – 20.99 Mpsas:** \n### 0 Data (-)")
+            bc2.info(f"**21.00 – 21.49 Mpsas:** \n### {len(df_bin2)} Data ({df_bin2['Fajar_Alt'].mean():.2f}°)" if not df_bin2.empty else "**21.00 – 21.49 Mpsas:** \n### 0 Data (-)")
+            bc3.info(f"**≥ 21.50 Mpsas:** \n### {len(df_bin3)} Data ({df_bin3['Fajar_Alt'].mean():.2f}°)" if not df_bin3.empty else "**≥ 21.50 Mpsas:** \n### 0 Data (-)")
+            
+            st.markdown(f"<br><b>Distribusi {len(df_kemenag_ideal)} Data Ideal Berdasarkan Kedalaman Fajar (Titik Belok):</b>", unsafe_allow_html=True)
+            df_fajar1 = df_kemenag_ideal[df_kemenag_ideal['Fajar_Alt'] <= -19.5]
+            df_fajar2 = df_kemenag_ideal[(df_kemenag_ideal['Fajar_Alt'] > -19.5) & (df_kemenag_ideal['Fajar_Alt'] <= -19.0)]
+            df_fajar3 = df_kemenag_ideal[(df_kemenag_ideal['Fajar_Alt'] > -19.0) & (df_kemenag_ideal['Fajar_Alt'] <= -18.5)]
+            df_fajar4 = df_kemenag_ideal[df_kemenag_ideal['Fajar_Alt'] > -18.5]
+            
+            fc1, fc2, fc3, fc4 = st.columns(4)
+            fc1.success(f"**Lebih dalam dari -19.5°:** \n### {len(df_fajar1)} Data ({df_fajar1['Fajar_Alt'].mean():.2f}°)" if not df_fajar1.empty else "**< -19.5°:** \n### 0 Data (-)")
+            fc2.success(f"**-19.5° s/d -19.0°:** \n### {len(df_fajar2)} Data ({df_fajar2['Fajar_Alt'].mean():.2f}°)" if not df_fajar2.empty else "**-19.5° s/d -19.0°:** \n### 0 Data (-)")
+            fc3.success(f"**-19.0° s/d -18.5°:** \n### {len(df_fajar3)} Data ({df_fajar3['Fajar_Alt'].mean():.2f}°)" if not df_fajar3.empty else "**-19.0° s/d -18.5°:** \n### 0 Data (-)")
+            fc4.success(f"**Lebih dangkal dari -18.5°:** \n### {len(df_fajar4)} Data ({df_fajar4['Fajar_Alt'].mean():.2f}°)" if not df_fajar4.empty else "**> -18.5°:** \n### 0 Data (-)")
 
-        st.divider()
-        st.subheader("🌍 Analisis Spasial & Faktor Lingkungan")
-        
-        if 'Lintang' in df_stat.columns and 'Bujur' in df_stat.columns:
-            df_map = df_stat.dropna(subset=['Lintang', 'Bujur', 'Fajar_Alt']).copy()
-            if not df_map.empty:
-                df_map['lat'] = pd.to_numeric(df_map['Lintang'], errors='coerce')
-                df_map['lon'] = pd.to_numeric(df_map['Bujur'], errors='coerce')
-                df_map_agg = df_map.groupby(['Kota', 'lat', 'lon']).agg(
-                    Fajar_Rata2=('Fajar_Alt', 'mean'),
-                    Total_Observasi=('Fajar_Alt', 'count')
-                ).reset_index()
-                
-                col_map, col_tab = st.columns([1, 1])
-                with col_map:
-                    st.markdown("**Peta Persebaran Titik Observasi**")
-                    st.map(df_map_agg[['lat', 'lon']], zoom=4, use_container_width=True)
-                with col_tab:
-                    st.markdown("**Tabel Deviasi Kemenag per Koordinat**")
-                    df_tabel = df_map_agg.rename(columns={'lat': 'Lintang', 'lon': 'Bujur', 'Fajar_Rata2': 'Rata-rata Fajar (°)'})
-                    df_tabel['Deviasi dari Kemenag'] = df_tabel['Rata-rata Fajar (°)'] - (-20.0)
-                    st.dataframe(df_tabel.style.format({'Rata-rata Fajar (°)': '{:.2f}', 'Deviasi dari Kemenag': '{:+.2f}'}), use_container_width=True)
-        
-        st.write("")
-        col1, col2 = st.columns(2)
-        with col1:
-            st.markdown("**Berdasarkan Polusi Cahaya (Bortle)**")
-            st.bar_chart(df_stat.groupby('Bortle')['Fajar_Alt'].mean().dropna())
-        with col2:
-            st.markdown("**Berdasarkan Koreksi Bulan**")
-            st.bar_chart(df_stat.groupby('Koreksi_Bulan')['Fajar_Alt'].mean().dropna())
+        # --- SUB-TAB 2: ANOMALI ---
+        with sub_anomali:
+            st.subheader("⚠️ Analisis Data Anomali & Kasus Ditolak")
+            df_anomali = df_stat[~((df_stat['Garis_Dasar'] >= 20.5) & (df_stat['Awan_%'] <= 5.0) & (df_stat['Koreksi_Bulan'] == 'Pasif'))].dropna(subset=['Fajar_Alt'])
             
-    else: st.info("Belum ada data untuk dianalisis.")
+            if df_anomali.empty:
+                st.success("Luar biasa! Tidak ada data anomali.")
+            else:
+                ac1, ac2, ac3 = st.columns(3)
+                ac1.metric("Total Data Ditolak", len(df_anomali), "Non-Ideal", delta_color="off")
+                ac2.metric("Rata-rata Kedalaman", f"{df_anomali['Fajar_Alt'].mean():.2f}°", "Cenderung Dangkal", delta_color="inverse")
+                ac3.metric("Rata-rata Garis Dasar", f"{df_anomali['Garis_Dasar'].mean():.2f} Mpsas", "Tercemar Polusi", delta_color="inverse")
+                
+                st.markdown(f"<br><b>Distribusi {len(df_anomali)} Data Anomali Berdasarkan Kedalaman (Rentang 0.5°):</b>", unsafe_allow_html=True)
+                df_a1 = df_anomali[df_anomali['Fajar_Alt'] <= -18.5]
+                df_a2 = df_anomali[(df_anomali['Fajar_Alt'] > -18.5) & (df_anomali['Fajar_Alt'] <= -18.0)]
+                df_a3 = df_anomali[(df_anomali['Fajar_Alt'] > -18.0) & (df_anomali['Fajar_Alt'] <= -17.5)]
+                df_a4 = df_anomali[df_anomali['Fajar_Alt'] > -17.5]
+                
+                anc1, anc2, anc3, anc4 = st.columns(4)
+                anc1.warning(f"**< -18.5°:** \n### {len(df_a1)} Data ({df_a1['Fajar_Alt'].mean():.2f}°)" if not df_a1.empty else "**< -18.5°:** \n### 0 Data (-)")
+                anc2.warning(f"**-18.5° s/d -18.0°:** \n### {len(df_a2)} Data ({df_a2['Fajar_Alt'].mean():.2f}°)" if not df_a2.empty else "**-18.5° s/d -18.0°:** \n### 0 Data (-)")
+                anc3.warning(f"**-18.0° s/d -17.5°:** \n### {len(df_a3)} Data ({df_a3['Fajar_Alt'].mean():.2f}°)" if not df_a3.empty else "**-18.0° s/d -17.5°:** \n### 0 Data (-)")
+                anc4.warning(f"**> -17.5°:** \n### {len(df_a4)} Data ({df_a4['Fajar_Alt'].mean():.2f}°)" if not df_a4.empty else "**> -17.5°:** \n### 0 Data (-)")
+
+                st.markdown("<br>", unsafe_allow_html=True)
+                hist_anom = alt.Chart(df_anomali).mark_bar(color='#d9534f', opacity=0.8).encode(
+                    alt.X("Fajar_Alt:Q", bin=alt.Bin(step=0.5), title="Ketinggian Matahari (Derajat) - Rentang 0.5°", scale=alt.Scale(domain=[-20, -10])),
+                    alt.Y('count()', title='Jumlah Kasus Anomali'),
+                    tooltip=['count()', alt.Tooltip('mean(Fajar_Alt):Q', format='.2f', title='Rata-rata Alt')]
+                ).properties(height=300)
+                st.altair_chart(hist_anom, use_container_width=True)
+
+        # --- SUB-TAB 3: KORELASI VARIABEL (FITUR BARU) ---
+        with sub_korelasi:
+            st.subheader("📈 Analisis Korelasi Antar Variabel Astrometri")
+            st.markdown("Visualisasi regresi untuk menguji hubungan sebab-akibat antara faktor lingkungan (Polusi Cahaya & Mendung) terhadap pergeseran titik belok fajar.")
+            
+            df_corr = df_stat.dropna(subset=['Garis_Dasar', 'Fajar_Alt', 'Awan_%']).copy()
+            
+            if df_corr.empty:
+                st.info("Data belum mencukupi untuk melakukan analisis korelasi.")
+            else:
+                col_k1, col_k2 = st.columns(2)
+                
+                with col_k1:
+                    st.markdown("**1. Korelasi Polusi Cahaya (Garis Dasar Mpsas) vs Titik Belok Fajar**")
+                    scatter_lp = alt.Chart(df_corr).mark_circle(size=60, color='#1D9A9C').encode(
+                        x=alt.X('Garis_Dasar:Q', title='Garis Dasar Kecerlangan (Mpsas)', scale=alt.Scale(zero=False)),
+                        y=alt.Y('Fajar_Alt:Q', title='Titik Belok Fajar (°)', scale=alt.Scale(domain=[-22, -12])),
+                        tooltip=['Kota', 'Tanggal', 'Garis_Dasar', 'Fajar_Alt']
+                    ).interactive().properties(height=320)
+                    
+                    reg_lp = scatter_lp.transform_regression('Garis_Dasar', 'Fajar_Alt').mark_line(color='#d9534f', strokeWidth=2)
+                    st.altair_chart(scatter_lp + reg_lp, use_container_width=True)
+                    st.caption("ℹ️ *Tren:* Langit yang semakin terang (Mpsas rendah di kiri) menarik titik fajar menjadi anomali dangkal.")
+
+                with col_k2:
+                    st.markdown("**2. Korelasi Gangguan Awan (%) vs Titik Belok Fajar**")
+                    scatter_cloud = alt.Chart(df_corr).mark_circle(size=60, color='#4A90E2').encode(
+                        x=alt.X('Awan_%:Q', title='Persentase Awan SQM (%)', scale=alt.Scale(domain=[0, 100])),
+                        y=alt.Y('Fajar_Alt:Q', title='Titik Belok Fajar (°)', scale=alt.Scale(domain=[-22, -12])),
+                        tooltip=['Kota', 'Tanggal', 'Awan_%', 'Fajar_Alt']
+                    ).interactive().properties(height=320)
+                    
+                    reg_cloud = scatter_cloud.transform_regression('Awan_%', 'Fajar_Alt').mark_line(color='#d9534f', strokeWidth=2)
+                    st.altair_chart(scatter_cloud + reg_cloud, use_container_width=True)
+                    st.caption("ℹ️ *Tren:* Peningkatan gangguan awan menyebabkan fluktuasi besar dan menggeser deteksi fajar dari titik idealnya.")
+    else: 
+        st.info("Basis data masih kosong. Silakan lakukan sinkronisasi atau unggah data terlebih dahulu.")
 
 with tab_algoritma:
     st.header("📖 Metodologi, Landasan Matematis & Spesifikasi Algoritma")
