@@ -319,10 +319,8 @@ def load_sqm_data(file_path):
     df["local_dt"] = pd.to_datetime(df["local"], errors="coerce")
     df = df.dropna(subset=["local_dt","mpsas"])
     
-    # Filter jam: ambil data pagi hari (sebelum jam 12 siang) dan tidak terhalang (mpsas > 0)
     am = df[(df["local_dt"].dt.hour < 12) & (df["mpsas"] > 0)].copy()
     
-    # PERBAIKAN: Hanya hitung dan urutkan JIKA datanya memang ada
     if not am.empty:
         am["sun_alt"] = solar_alt(am["local_dt"], lat, lon, utc_offset)
         am = am.sort_values("sun_alt").reset_index(drop=True)
@@ -447,7 +445,10 @@ def process_and_save_data(file_paths, method, df_existing):
             else:
                 kota = kota_akurat
             
-            fig, ax = plt.subplots(figsize=(10, 5))
+            # PENGAMAN UKURAN PLOT MATPLOTLIB (Mencegah error overflow nilai triliunan piksel)
+            fig_width = max(6, min(15, len(am) / 50))
+            fig, ax = plt.subplots(figsize=(fig_width, 5))
+            
             ax.plot(am["sun_alt"], am["mpsas_corrected"], color="#1A3C40", alpha=0.8, linewidth=1.5, label="SQM Terkoreksi")
             if is_corrected: ax.plot(am["sun_alt"], am["mpsas"], color="#808080", alpha=0.4, linestyle=":", label="SQM Mentah")
             if onset_alt is not None:
