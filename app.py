@@ -539,17 +539,25 @@ with tab_dashboard:
         c3.metric("Total Rata-rata (Pembanding)", f"{rata_rata_total:.2f}°", f"{selisih_total:+.2f}° dari -20°", delta_color="inverse")
         c4.metric("Data Ideal Tersaring", len(df_kemenag_ideal))
         
-        # --- BLOK BARU: DISTRIBUSI DATA IDEAL BERDASARKAN KECERLANGAN ---
-        st.markdown("<br><b>Distribusi 123 Data Ideal Berdasarkan Kecerlangan Langit (Garis Dasar):</b>", unsafe_allow_html=True)
+        # --- BLOK BARU: DISTRIBUSI DATA IDEAL DENGAN RATA-RATA FAJAR ---
+        st.markdown(f"<br><b>Distribusi {len(df_kemenag_ideal)} Data Ideal Berdasarkan Kecerlangan Langit (Garis Dasar):</b>", unsafe_allow_html=True)
         
-        bin1 = len(df_kemenag_ideal[(df_kemenag_ideal['Garis_Dasar'] >= 20.5) & (df_kemenag_ideal['Garis_Dasar'] < 21.0)])
-        bin2 = len(df_kemenag_ideal[(df_kemenag_ideal['Garis_Dasar'] >= 21.0) & (df_kemenag_ideal['Garis_Dasar'] < 21.5)])
-        bin3 = len(df_kemenag_ideal[df_kemenag_ideal['Garis_Dasar'] >= 21.5])
+        df_bin1 = df_kemenag_ideal[(df_kemenag_ideal['Garis_Dasar'] >= 20.5) & (df_kemenag_ideal['Garis_Dasar'] < 21.0)]
+        df_bin2 = df_kemenag_ideal[(df_kemenag_ideal['Garis_Dasar'] >= 21.0) & (df_kemenag_ideal['Garis_Dasar'] < 21.5)]
+        df_bin3 = df_kemenag_ideal[df_kemenag_ideal['Garis_Dasar'] >= 21.5]
+        
+        len1 = len(df_bin1)
+        len2 = len(df_bin2)
+        len3 = len(df_bin3)
+        
+        mean1 = f"({df_bin1['Fajar_Alt'].mean():.2f}°)" if len1 > 0 else "(-)"
+        mean2 = f"({df_bin2['Fajar_Alt'].mean():.2f}°)" if len2 > 0 else "(-)"
+        mean3 = f"({df_bin3['Fajar_Alt'].mean():.2f}°)" if len3 > 0 else "(-)"
         
         bc1, bc2, bc3 = st.columns(3)
-        bc1.info(f"**20.50 – 20.99 Mpsas:** \n### {bin1} Data")
-        bc2.info(f"**21.00 – 21.49 Mpsas:** \n### {bin2} Data")
-        bc3.info(f"**≥ 21.50 Mpsas:** \n### {bin3} Data")
+        bc1.info(f"**20.50 – 20.99 Mpsas:** \n### {len1} Data {mean1}")
+        bc2.info(f"**21.00 – 21.49 Mpsas:** \n### {len2} Data {mean2}")
+        bc3.info(f"**≥ 21.50 Mpsas:** \n### {len3} Data {mean3}")
         # ---------------------------------------------------------------
         
         st.divider()
