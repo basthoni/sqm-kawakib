@@ -318,10 +318,15 @@ def load_sqm_data(file_path):
     df = pd.read_csv(processed_path, skiprows=data_start, sep=";", header=None, names=["utc","local","temp","cnt","hz","mpsas"], engine="python", on_bad_lines="skip")
     df["local_dt"] = pd.to_datetime(df["local"], errors="coerce")
     df = df.dropna(subset=["local_dt","mpsas"])
+    
+    # Filter jam: ambil data pagi hari (sebelum jam 12 siang) dan tidak terhalang (mpsas > 0)
     am = df[(df["local_dt"].dt.hour < 12) & (df["mpsas"] > 0)].copy()
-    am = am.sort_values("sun_alt").reset_index(drop=True) if "sun_alt" in am.columns else am
-    if not am.empty: am["sun_alt"] = solar_alt(am["local_dt"], lat, lon, utc_offset)
-    am = am.sort_values("sun_alt").reset_index(drop=True)
+    
+    # PERBAIKAN: Hanya hitung dan urutkan JIKA datanya memang ada
+    if not am.empty:
+        am["sun_alt"] = solar_alt(am["local_dt"], lat, lon, utc_offset)
+        am = am.sort_values("sun_alt").reset_index(drop=True)
+        
     date_str = am["local_dt"].iloc[0].strftime("%Y-%m-%d") if not am.empty else "Unknown"
     return am, site, lat, lon, utc_offset, date_str, processed_path
 
@@ -586,7 +591,6 @@ with tab_statistik_utama:
     st.header("📊 Pusat Analisis Statistik & Korelasi Variabel")
     st.markdown("Pusat komparasi mendalam antara data ideal Kemenag, data anomali lingkungan, korelasi variabel astrometri, serta pemetaan spasial lokasi pengamatan.")
     
-    # Menambahkan sub-tab baru "Peta Spasial" di sini
     sub_ideal, sub_anomali, sub_korelasi, sub_peta = st.tabs([
         "🌟 Data Ideal (Kemenag)", 
         "⚠️ Data Anomali & Pemeriksaan", 
@@ -731,20 +735,15 @@ with tab_statistik_utama:
             st.subheader("🗺️ Peta Persebaran Stasiun Pengamatan")
             st.markdown("Visualisasi geografis titik-titik lokasi perekaman data SQM yang terhubung ke dalam jaringan observasi Kawakib Institute.")
             
-            # Memastikan nilai Lintang dan Bujur berupa numerik yang sah
             df_stat['Lintang'] = pd.to_numeric(df_stat.get('Lintang', pd.Series(dtype=float)), errors='coerce')
             df_stat['Bujur'] = pd.to_numeric(df_stat.get('Bujur', pd.Series(dtype=float)), errors='coerce')
             
-            # Membersihkan baris yang tidak memiliki koordinat
             df_peta = df_stat.dropna(subset=['Lintang', 'Bujur']).copy()
             
             if df_peta.empty:
                 st.info("📍 Belum ada data stasiun dengan titik koordinat Lintang & Bujur yang sah di dalam database.")
             else:
-                # Mengubah nama kolom agar dikenali langsung sebagai koordinat spasial oleh st.map() Streamlit
                 df_map = df_peta.rename(columns={'Lintang': 'lat', 'Bujur': 'lon'})
-                
-                # Menampilkan peta dengan ukuran penuh dan zoom default agar Indonesia terlihat
                 st.map(df_map[['lat', 'lon']], zoom=4)
                 
                 st.markdown("<br>**📍 Detail Rekap Lokasi Stasiun & Hasil Fotometri:**", unsafe_allow_html=True)
