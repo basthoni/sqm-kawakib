@@ -124,7 +124,7 @@ def normalisasi_ke_pysqm(input_path, output_path):
     df_final.to_csv(output_path, sep=';', index=False, header=False, mode='a')
 
 def normalisasi_lapan_ke_pysqm(input_path, output_path):
-    """Fungsi otomatis mengubah file LAPAN ke standar PySQM dengan deteksi header koordinat"""
+    """Fungsi otomatis mengubah file LAPAN ke standar PySQM dengan pemetaan kolom MPSAS yang benar"""
     lon, lat = None, None
     data_lines = []
     
@@ -152,6 +152,7 @@ def normalisasi_lapan_ke_pysqm(input_path, output_path):
     df['Local_Str'] = df['Local_Time'].dt.strftime('%Y-%m-%dT%H:%M:%S.000')
     df['UTC_Str'] = df['UTC_Time'].dt.strftime('%Y-%m-%dT%H:%M:%S.000')
 
+    # Pemetaan diperbaiki: col6 diisi penuh oleh MPSAS untuk kurva yang mulus
     df_final = pd.DataFrame({
         'col1': df['UTC_Str'],
         'col2': df['Local_Str'],
@@ -186,7 +187,7 @@ def normalisasi_lapan_ke_pysqm(input_path, output_path):
         f.write("# SQM readout test ix: r,00000004,00000003,00000076,00005461\n")
         f.write("# SQM readout test rx: r, 08.25m,0000047628HZ,0000000000c,0000000.000s, 023.8C\n")
         f.write("# SQM readout test cx: c,00000019.94m,0000263.813s, 017.4C,00000008.71m, 018.0C\n")
-        f.write("# Comment: Converted via Smart Ingestion Pipeline (LAPAN Format)\n")
+        f.write("# Comment: Converted via Smart Ingestion Pipeline (LAPAN Format Fixed)\n")
         f.write("# Comment:\n")
         f.write("# Comment:\n")
         f.write("# Comment:\n")
