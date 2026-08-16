@@ -357,6 +357,7 @@ def process_and_save_data(file_paths, method, df_existing):
             if method == "SIGMAG-STAB": onset_alt, onset_msas = analyze_sigmag(am, bin_deg, n_consec)
             else: onset_alt, onset_msas = analyze_sigmoid(am)
             
+            # --- FILTER UTAMA MENDUNG BERDASARKAN SQM UFUK TIMUR (JENDELA ±15 MENIT) ---
             cloud_pct, df_win = analyze_cloud_cover(am, onset_alt, window_minutes=15)
             sat_cloud_pct = get_satellite_cloud_cover(lat, lon, date_str) 
             
@@ -377,7 +378,7 @@ def process_and_save_data(file_paths, method, df_existing):
                 ax.axvline(onset_alt, color="#1D9A9C", linestyle="--", linewidth=2, label=f"Titik Belok ({onset_alt:.2f}°)")
                 ax.scatter([onset_alt], [onset_msas], color="#1D9A9C", s=60, zorder=5)
             cloudy_points = df_win[df_win['is_cloudy'] == True] if 'is_cloudy' in df_win.columns else pd.DataFrame()
-            if not cloudy_points.empty: ax.scatter(cloudy_points["sun_alt"], cloudy_points["mpsas_corrected"], color="#d9534f", s=15, label="Indikasi Awan (SQM)", zorder=4)
+            if not cloudy_points.empty: ax.scatter(cloudy_points["sun_alt"], cloudy_points["mpsas_corrected"], color="#d9534f", s=15, label="Indikasi Awan (SQM Ufuk)", zorder=4)
             ax.invert_yaxis()
             ax.set_xlim(-30, -5)
             ax.set_xlabel("Ketinggian Matahari (Derajat)", fontweight='bold')
@@ -389,7 +390,7 @@ def process_and_save_data(file_paths, method, df_existing):
             sat_str = f"{sat_cloud_pct:.1f}%" if sat_cloud_pct is not None else "N/A"
             
             info_text = (f"Garis Dasar : {baseline_mpsas:.2f} Mpsas\n"
-                         f"Awan SQM/Sat: {cloud_pct:.1f}% / {sat_str}\n"
+                         f"Awan SQM(Ufuk)/Sat: {cloud_pct:.1f}% / {sat_str}\n"
                          f"Fase Bulan  : {'Aktif' if is_corrected else 'Pasif'}\n"
                          f"Fajar Sadiq : {onset_str}")
             props = dict(boxstyle='round', facecolor='#F8F9FA', alpha=0.9, edgecolor='#1A3C40')
@@ -426,7 +427,7 @@ def process_and_save_data(file_paths, method, df_existing):
         except Exception as e: st.error(f"Gagal memproses {os.path.basename(path)}: {str(e)}")
         progress_bar.progress((idx + 1) / len(file_paths))
     status_text.text("")
-    st.success("🎉 Seluruh pengamatan dan validasi satelit berhasil diproses.")
+    st.success("🎉 Seluruh pengamatan dan kalibrasi ufuk timur berhasil diproses.")
 
 # =====================================================================
 # UI KONTROL & SIDEBAR
@@ -461,11 +462,10 @@ st.markdown(f"""
     </div>
     <div style="border-bottom: 2px solid #1D9A9C; margin-top: 8px; margin-bottom: 10px;"></div>
     <p style='color: #555; font-size: 0.92rem; margin-bottom: 15px;'>
-        Aplikasi web ini mengekstrak titik belok fajar sadiq secara otonom. Terintegrasi dengan radar satelit cuaca untuk validasi absolut.
+        Aplikasi web ini mengekstrak titik belok fajar sadiq secara otonom berbasis orientasi sensor SQM menghadap ufuk timur.
     </p>
 """, unsafe_allow_html=True)
 
-# --- STRUKTUR UTAMA DENGAN 4 TAB UTAMA ---
 tab_analisis, tab_histori, tab_statistik_utama, tab_algoritma = st.tabs([
     "🚀 Analisis Data", "☁️ Basis Data", "📊 Statistik & Analisis", "📖 Metodologi & Algoritma"
 ])
@@ -509,7 +509,7 @@ with tab_histori:
         st.download_button("⬇️ Unduh CSV", df_cloud.to_csv(index=False).encode('utf-8'), 'Rekap_Kawakib_Cloud.csv', 'text/csv')
 
 # =====================================================================
-# MENU UTAMA: STATISTIK & ANALISIS (BERISI 3 SUB-TAB: IDEAL, ANOMALI, KORELASI)
+# MENU UTAMA: STATISTIK & ANALISIS (3 SUB-TAB)
 # =====================================================================
 with tab_statistik_utama:
     st.header("📊 Pusat Analisis Statistik & Korelasi Variabel")
@@ -603,10 +603,10 @@ with tab_statistik_utama:
                 ).properties(height=300)
                 st.altair_chart(hist_anom, use_container_width=True)
 
-        # --- SUB-TAB 3: KORELASI VARIABEL (FITUR BARU) ---
+        # --- SUB-TAB 3: KORELASI VARIABEL ---
         with sub_korelasi:
             st.subheader("📈 Analisis Korelasi Antar Variabel Astrometri")
-            st.markdown("Visualisasi regresi untuk menguji hubungan sebab-akibat antara faktor lingkungan (Polusi Cahaya & Mendung) terhadap pergeseran titik belok fajar.")
+            st.markdown("Visualisasi regresi untuk menguji hubungan sebab-akibat antara faktor lingkungan (Polusi Cahaya & Awan Ufuk Timur) terhadap pergeseran titik belok fajar.")
             
             df_corr = df_stat.dropna(subset=['Garis_Dasar', 'Fajar_Alt', 'Awan_%']).copy()
             
@@ -625,80 +625,45 @@ with tab_statistik_utama:
                     
                     reg_lp = scatter_lp.transform_regression('Garis_Dasar', 'Fajar_Alt').mark_line(color='#d9534f', strokeWidth=2)
                     st.altair_chart(scatter_lp + reg_lp, use_container_width=True)
-                    st.caption("ℹ️ *Tren:* Langit yang semakin terang (Mpsas rendah di kiri) menarik titik fajar menjadi anomali dangkal.")
+                    st.caption("ℹ️ *Tren:* Langit yang semakin terang menarik titik fajar menjadi anomali dangkal.")
 
                 with col_k2:
-                    st.markdown("**2. Korelasi Gangguan Awan (%) vs Titik Belok Fajar**")
+                    st.markdown("**2. Korelasi Gangguan Awan Ufuk (%) vs Titik Belok Fajar**")
                     scatter_cloud = alt.Chart(df_corr).mark_circle(size=60, color='#4A90E2').encode(
-                        x=alt.X('Awan_%:Q', title='Persentase Awan SQM (%)', scale=alt.Scale(domain=[0, 100])),
+                        x=alt.X('Awan_%:Q', title='Persentase Awan SQM Ufuk (%)', scale=alt.Scale(domain=[0, 100])),
                         y=alt.Y('Fajar_Alt:Q', title='Titik Belok Fajar (°)', scale=alt.Scale(domain=[-22, -12])),
                         tooltip=['Kota', 'Tanggal', 'Awan_%', 'Fajar_Alt']
                     ).interactive().properties(height=320)
                     
                     reg_cloud = scatter_cloud.transform_regression('Awan_%', 'Fajar_Alt').mark_line(color='#d9534f', strokeWidth=2)
                     st.altair_chart(scatter_cloud + reg_cloud, use_container_width=True)
-                    st.caption("ℹ️ *Tren:* Peningkatan gangguan awan menyebabkan fluktuasi besar dan menggeser deteksi fajar dari titik idealnya.")
+                    st.caption("ℹ️ *Tren:* Fluktuasi awan di ufuk timur menyebabkan pergeseran pembacaan titik belok fajar.")
     else: 
         st.info("Basis data masih kosong. Silakan lakukan sinkronisasi atau unggah data terlebih dahulu.")
 
 with tab_algoritma:
     st.header("📖 Metodologi, Landasan Matematis & Spesifikasi Algoritma")
     st.markdown(r"""
-    Aplikasi ini dibangun sebagai instrumen riset falakiyah analitis yang menggabungkan astrometri klasik, pemrosesan sinyal digital (*Digital Signal Processing*), dan validasi satelit.
+    Aplikasi ini dibangun sebagai instrumen riset falakiyah analitis yang menggabungkan astrometri klasik, pemrosesan sinyal digital (*Digital Signal Processing*), dan validasi orientasi ufuk timur.
 
-    ### 1. Ekstraksi Fajar: Metode SIGMAG-STAB
-    *Smoothed Gradient - Median Absolute Deviation Stability* (SIGMAG-STAB) adalah algoritma utama yang dirancang untuk mendeteksi titik belok (*inflection point*) awal fajar sadiq pada kurva fotometri yang bising.
+    ### 1. Ekstraksi Fajar: Metode SIGMAG-STAB & Filter Ufuk Timur
+    *Smoothed Gradient - Median Absolute Deviation Stability* (SIGMAG-STAB) dipadukan dengan pembacaan sensor SQM yang terarah presisi menghadap langsung ke ufuk timur tempat fajar menyingsing.
 
     **A. Penghalusan Derau (Savitzky-Golay Filter)**
     Data mentah dihaluskan menggunakan konvolusi polinomial untuk membuang *noise* frekuensi tinggi tanpa merusak bentuk asli transisi fajar:
     $$ Y_j^* = \frac{1}{N} \sum_{i=-m}^{m} C_i Y_{j+i} $$
-    Di mana $Y_j^*$ adalah nilai kecerlangan yang dihaluskan, dan $C_i$ adalah koefisien konvolusi polinomial orde-2.
 
-    **B. Kalkulasi Gradien (Turunan Pertama)**
-    Mencari laju perubahan kecerlangan langit terhadap perubahan sudut matahari:
-    $$ \nabla y = \frac{d(\text{Mpsas})}{d(\text{Altitude})} \approx \frac{y_{i+1} - y_{i-1}}{x_{i+1} - x_{i-1}} $$
-
-    **C. Pendeteksian Anomali dengan MAD (*Median Absolute Deviation*)**
-    Garis dasar malam (*baseline*) dihitung saat matahari berada di $\le -20^\circ$. Kestabilan malam diukur menggunakan MAD (pendekatan statistik robust yang kebal terhadap pencilan/outlier):
-    $$ \text{MAD} = 1.4826 \times \text{median}(|X_i - \tilde{X}|) $$
-    Fajar sadiq ditetapkan secara sah ketika nilai gradien $\nabla y$ menembus ambang batas deviasi negatif secara berturut-turut dalam *n-langkah* observasi.
+    **B. Filter Mendung Berbasis Sensor Ufuk (Jendela Kritis $\pm 15$ Menit)**
+    Alih-alih menggunakan estimasi satelit makro yang mengasumsikan tutupan awan dari atas kepala (zenit), aplikasi ini memprioritaskan **Rolling Standard Deviation** dari sensor SQM tepat pada rentang 15 menit sebelum hingga sesudah titik belok fajar. Hal ini memastikan bahwa kejernihan di titik sasaran ufuk timur terekam secara mutlak dan objektif.
 
     ---
 
-    ### 2. Ekstraksi Fajar: Metode SIGMOID (*Curve Fitting*)
-    Metode sekunder ini menggunakan regresi non-linear kuadrat terkecil (*Non-linear Least Squares*) yang memaksa kurva fajar malam hari untuk mengikuti fungsi logistik (Kurva-S). Sangat ideal untuk langit tipe 1 dan 2.
+    ### 2. Klasifikasi Polusi Cahaya (Berdasarkan Disertasi Basthoni)
+    Aplikasi ini menggunakan **4 Skala Penyederhanaan Polusi Cahaya** (adaptasi 9 Skala Bortle Internasional) yang didasarkan secara empiris pada **Visibilitas Ketampakan Fajar Kadzib (*Zodiacal Light*)**:
+    1.  **Tipe 1 ($\ge 21.3$ Mpsas):** Langit Gelap (Fajar Kadzib tampak sangat jelas).
+    2.  **Tipe 2 ($20.2 - 21.29$ Mpsas):** Langit Agak Gelap (Pedesaan/Pinggiran).
+    3.  **Tipe 3 ($19.1 - 20.19$ Mpsas):** Langit Agak Terang (Suburban).
+    4.  **Tipe 4 ($< 19.1$ Mpsas):** Langit Terang/Urban (Pusat kota dengan polusi cahaya tinggi).
 
-    Persamaan fungsi logistik yang digunakan:
-    $$ f(x) = \frac{L}{1 + e^{-k(x - x_0)}} + b $$
-    Dimana:
-    * $L$ : Amplitudo maksimal kurva (Selisih gelap malam dan terang pagi)
-    * $k$ : Laju kecuraman transisi fajar (Tingkat hamburan Rayleigh)
-    * $x_0$ : Titik tengah transisi fajar
-    * $b$ : Batas asimtotik (*Garis dasar/Baseline langit malam*)
-    Titik awal fajar ditarik dari nilai $x$ (Altitude) di mana kurva mulai menyimpang dari nilai $b$.
-
-    ---
-
-    ### 3. Validasi Lingkungan Cerdas (*Smart Cloud & Satellite Validation*)
-    Pendeteksian fajar seringkali mengalami *False Positive* (Positif Palsu) akibat kondisi mikroklimat lokal. Untuk memitigasi hal ini, aplikasi menggunakan validasi ganda:
-
-    * **Validasi Mikro (Sensor SQM - *Jendela Kritis $\pm 15$ Menit*):** Algoritma membidik rentang waktu tepat 15 menit sebelum hingga sesudah titik belok fajar. Sistem menghitung *Rolling Standard Deviation* pada rentang sempit ini. Jika fluktuasi melebihi batas dinamis, observasi dilabeli memiliki gangguan awan.
-    * **Validasi Makro (Satelit Open-Meteo):**
-        Sistem mengirim titik koordinat observasi ke API Satelit Cuaca Global (*Reverse Geocoding*) untuk mengekstrak persentase tutupan awan dari luar angkasa. 
-    
-    > 💡 **Anomali Albedo Perkotaan (Kenapa Satelit Wajib Ada?):**
-    Di kawasan urban dengan polusi cahaya ekstrem, awan pekat bertipe merata (*stratus*) bertindak sebagai reflektor yang memantulkan lampu kota kembali ke bumi. Akibatnya, sensor SQM merekam stabilitas cahaya buatan (seolah awan $0\% - 2\%$), padahal aslinya langit sedang mendung total. Kondisi ini membuat cahaya Fajar Sadiq tertahan awan dan baru terdeteksi pada kedalaman anomali (misal: $-13^\circ$). Validasi satelit berfungsi membongkar "ilusi stabilitas" ini dengan menampakkan persentase mendung yang sebenarnya (misal: $> 80\%$).
-
-    ---
-
-    ### 4. Klasifikasi Polusi Cahaya (Berdasarkan Disertasi Basthoni)
-    Aplikasi ini menggunakan **4 Skala Penyederhanaan Polusi Cahaya**. Klasifikasi ini merupakan penyederhanaan dari 9 Skala Bortle Internasional, yang diadaptasi dan didasarkan secara empiris pada **Visibilitas Ketampakan Fajar Kadzib (*Zodiacal Light*)** di lokasi pengamatan (Merujuk pada *Disertasi Mochammad Basthoni*).
-
-    Pembagian 4 kuadran klasifikasi tersebut adalah:
-    1.  **Tipe 1 (Langit Gelap | $\ge 21.3$ Mpsas):** Bebas polusi cahaya. Fajar Kadzib tampak sangat jelas dan menjulang secara vertikal sebelum Fajar Sadiq menyingsing.
-    2.  **Tipe 2 (Agak Gelap | $20.2 - 21.29$ Mpsas):** Area pedesaan/pinggiran. Fajar Kadzib masih dapat diobservasi secara visual meski kontrasnya mulai menurun akibat sebaran cahaya di horizon.
-    3.  **Tipe 3 (Agak Terang | $19.1 - 20.19$ Mpsas):** Area suburban/transisi. Fajar Kadzib sangat sulit hingga hampir mustahil dibedakan dengan pendaran polusi cahaya kota di ufuk.
-    4.  **Tipe 4 (Terang/Urban | $< 19.1$ Mpsas):** Pusat kota. Polusi cahaya absolut menenggelamkan Fajar Kadzib sepenuhnya. 
-
-    > 🔬 **Filter Kalibrasi Kemenag:** Untuk menjaga integritas data empiris Fajar Sadiq yang murni, mesin analitik hanya memasukkan data pada rentang **Tipe 1 dan Tipe 2 (Garis Dasar $\ge 20.5$ Mpsas)** yang lolos verifikasi radar cuaca lokal ($\le 5\%$) dan bebas kontaminasi cahaya bulan.
+    > 🔬 **Filter Kalibrasi Kemenag:** Data ideal yang masuk ke dalam hitungan rata-rata nasional mensyaratkan Garis Dasar $\ge 20.5$ Mpsas, gangguan awan ufuk timur $\le 5\%$, dan bebas dari kontaminasi cahaya bulan.
     """)
