@@ -68,24 +68,21 @@ def normalisasi_ke_pysqm(input_path, output_path):
     """Fungsi otomatis mengubah file variatif (seperti format Bosscha berpemisah koma) ke standar PySQM"""
     df = pd.read_csv(input_path, sep=',')
     
-    # Konversi waktu lokal ke UTC (Asumsi WIB / UTC+7)
     df['Local_Time'] = pd.to_datetime(df['Date/Time'])
     df['UTC_Time'] = df['Local_Time'] - pd.Timedelta(hours=7)
     
     df['Local_Str'] = df['Local_Time'].dt.strftime('%Y-%m-%dT%H:%M:%S.000')
     df['UTC_Str'] = df['UTC_Time'].dt.strftime('%Y-%m-%dT%H:%M:%S.000')
     
-    # Mapping ke struktur baku PySQM (6 kolom)
     df_final = pd.DataFrame({
         'col1': df['UTC_Str'],
         'col2': df['Local_Str'],
         'col3': df['Temp(C)'],
-        'col4': 0.000,          # Dummy counts
-        'col5': 0.000,          # Dummy frequency
-        'col6': df['MPSAS']     # MPSAS dipetakan jadi MSAS
+        'col4': 0.000,          
+        'col5': 0.000,          
+        'col6': df['MPSAS']     
     })
     
-    # Menulis persis 35 baris header standar PySQM + data bersih
     with open(output_path, 'w') as f:
         f.write("# Definition of the community standard for skyglow observations 1.0\n")
         f.write("# URL: http://www.darksky.org/NSBM/sdf1.0.pdf\n")
@@ -126,32 +123,24 @@ def normalisasi_ke_pysqm(input_path, output_path):
     df_final.to_csv(output_path, sep=';', index=False, header=False, mode='a')
 
 def proses_file_masuk(file_input):
-    """Pintu Masuk Cerdas (Smart Ingestion) untuk mendeteksi format file secara otomatis"""
+    """Pintu Masuk Cerdas (Smart Ingestion)"""
     file_ekstensi = os.path.splitext(file_input)[1].lower()
     file_standar_sementara = file_input + "_standardized.dat"
     
     if file_ekstensi == '.dat':
         with open(file_input, 'r', encoding='utf-8', errors='ignore') as f:
             baris_pertama = f.readline()
-        if baris_pertama.startswith('#'):
-            file_aktif = file_input
-        else:
-            # Jika file .dat tapi format tidak standar, bisa diarahkan ke normalisasi
-            file_aktif = file_input
+        if baris_pertama.startswith('#'): file_aktif = file_input
+        else: file_aktif = file_input
     elif file_ekstensi == '.txt':
-        # Deteksi apakah format teks ala Bosscha (mengandung header Date/Time)
         try:
-            with open(file_input, 'r', encoding='utf-8', errors='ignore') as f:
-                header_line = f.readline()
+            with open(file_input, 'r', encoding='utf-8', errors='ignore') as f: header_line = f.readline()
             if 'Date/Time' in header_line or ',' in header_line:
                 normalisasi_ke_pysqm(file_input, file_standar_sementara)
                 file_aktif = file_standar_sementara
-            else:
-                file_aktif = file_input
-        except:
-            file_aktif = file_input
-    else:
-        file_aktif = file_input
+            else: file_aktif = file_input
+        except: file_aktif = file_input
+    else: file_aktif = file_input
         
     return file_aktif
 
@@ -164,8 +153,7 @@ def get_city_from_coords(lat, lon):
             data = json.loads(response.read())
             address = data.get('address', {})
             city = address.get('city') or address.get('county') or address.get('state_district') or address.get('town') or address.get('village')
-            if city:
-                return city.replace("Kabupaten ", "").replace("Kota ", "")
+            if city: return city.replace("Kabupaten ", "").replace("Kota ", "")
     except: pass
     return "Unknown"
 
@@ -279,15 +267,6 @@ def get_satellite_cloud_cover(lat, lon, date_str):
             valid = [c for c in clouds[3:6] if c is not None]
             if valid: return round(sum(valid)/len(valid), 1)
     except: pass
-    try:
-        url2 = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&start_date={date_str}&end_date={date_str}&hourly=cloudcover&timezone=auto"
-        req2 = urllib.request.Request(url2, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req2, timeout=5) as response:
-            data = json.loads(response.read())
-            clouds = data.get('hourly', {}).get('cloudcover', [])
-            valid = [c for c in clouds[3:6] if c is not None]
-            if valid: return round(sum(valid)/len(valid), 1)
-    except: pass
     return None
 
 # =====================================================================
@@ -339,11 +318,12 @@ def load_sqm_data(file_path):
     df = pd.read_csv(processed_path, skiprows=data_start, sep=";", header=None, names=["utc","local","temp","cnt","hz","mpsas"], engine="python", on_bad_lines="skip")
     df["local_dt"] = pd.to_datetime(df["local"], errors="coerce")
     df = df.dropna(subset=["local_dt","mpsas"])
-    df["sun_alt"] = solar_alt(df["local_dt"], lat, lon, utc_offset)
     am = df[(df["local_dt"].dt.hour < 12) & (df["mpsas"] > 0)].copy()
+    am = am.sort_values("sun_alt").reset_index(drop=True) if "sun_alt" in am.columns else am
+    if not am.empty: am["sun_alt"] = solar_alt(am["local_dt"], lat, lon, utc_offset)
     am = am.sort_values("sun_alt").reset_index(drop=True)
     date_str = am["local_dt"].iloc[0].strftime("%Y-%m-%d") if not am.empty else "Unknown"
-    return am, site, lat, lon, utc_offset, date_str
+    return am, site, lat, lon, utc_offset, date_str, processed_path
 
 def apply_moonlight_correction(am, lat, lon, utc_offset):
     obs, moon = ephem.Observer(), ephem.Moon()
@@ -441,7 +421,7 @@ def process_and_save_data(file_paths, method, df_existing):
     for idx, path in enumerate(file_paths):
         status_text.text(f"Memproses {idx+1}/{len(file_paths)}: {os.path.basename(path)}")
         try:
-            am, site, lat, lon, utc_offset, date_str = load_sqm_data(path)
+            am, site, lat, lon, utc_offset, date_str, processed_path = load_sqm_data(path)
             if am.empty: continue
             
             am, is_corrected = apply_moonlight_correction(am, lat, lon, utc_offset)
@@ -500,7 +480,7 @@ def process_and_save_data(file_paths, method, df_existing):
             else:
                 status_text.text(f"Mengunggah arsip baru ke Cloudinary...")
                 plot_url = upload_plot_to_cloudinary(fig, f"Plot_{site}_{date_str}_{method}".replace(" ", "_"))
-                raw_url = upload_raw_to_cloudinary(path, f"Raw_{site}_{date_str}_{method}.dat".replace(" ", "_"))
+                raw_url = upload_raw_to_cloudinary(processed_path, f"Raw_{site}_{date_str}_{method}.dat".replace(" ", "_"))
             
             save_to_google_sheets({
                 "Tanggal": date_str, "Kota": kota, "Lokasi": site, 
@@ -600,16 +580,18 @@ with tab_histori:
         st.download_button("⬇️ Unduh CSV", df_cloud.to_csv(index=False).encode('utf-8'), 'Rekap_Kawakib_Cloud.csv', 'text/csv')
 
 # =====================================================================
-# MENU UTAMA: STATISTIK & ANALISIS (3 SUB-TAB DENGAN JUDUL BERSIH)
+# MENU UTAMA: STATISTIK & ANALISIS (KINI DENGAN TAB PETA)
 # =====================================================================
 with tab_statistik_utama:
     st.header("📊 Pusat Analisis Statistik & Korelasi Variabel")
-    st.markdown("Pusat komparasi mendalam antara data ideal Kemenag, data anomali lingkungan, serta regresi korelasi variabel astrometri.")
+    st.markdown("Pusat komparasi mendalam antara data ideal Kemenag, data anomali lingkungan, korelasi variabel astrometri, serta pemetaan spasial lokasi pengamatan.")
     
-    sub_ideal, sub_anomali, sub_korelasi = st.tabs([
+    # Menambahkan sub-tab baru "Peta Spasial" di sini
+    sub_ideal, sub_anomali, sub_korelasi, sub_peta = st.tabs([
         "🌟 Data Ideal (Kemenag)", 
         "⚠️ Data Anomali & Pemeriksaan", 
-        "📈 Korelasi Variabel"
+        "📈 Korelasi Variabel",
+        "🗺️ Peta Spasial"
     ])
     
     df_stat = load_data_from_google_sheets()
@@ -686,8 +668,6 @@ with tab_statistik_utama:
 
                 st.divider()
                 st.subheader("🔍 Tabel Rincian Data Berdasarkan Kelompok Anomali")
-                st.markdown("Pilih kelompok rentang kedalaman di bawah ini untuk menampilkan daftar data spesifik beserta tautan grafiknya:")
-                
                 pilihan_kelompok = st.selectbox(
                     "Pilih Kelompok Anomali untuk Diperiksa:",
                     [
@@ -710,12 +690,6 @@ with tab_statistik_utama:
                         "Link_Grafik": st.column_config.LinkColumn("Link Grafik", display_text="🖼️ Lihat Grafik Plot"),
                         "Link_DataMentah": st.column_config.LinkColumn("Link Data Mentah", display_text="📁 Buka File Mentah")
                     }
-                )
-                st.download_button(
-                    "⬇️ Unduh CSV Kelompok Ini", 
-                    df_tampil.to_csv(index=False).encode('utf-8'), 
-                    f'Anomali_{pilihan_kelompok.split(":")[0].replace(" ", "_")}.csv', 
-                    'text/csv'
                 )
 
         # --- SUB-TAB 3: KORELASI VARIABEL ---
@@ -740,7 +714,6 @@ with tab_statistik_utama:
                     
                     reg_lp = scatter_lp.transform_regression('Garis_Dasar', 'Fajar_Alt').mark_line(color='#d9534f', strokeWidth=2)
                     st.altair_chart(scatter_lp + reg_lp, use_container_width=True)
-                    st.caption("ℹ️ *Tren:* Langit yang semakin terang menarik titik fajar menjadi anomali dangkal.")
 
                 with col_k2:
                     st.markdown("**2. Korelasi Gangguan Awan Ufuk (%) vs Titik Belok Fajar**")
@@ -752,7 +725,33 @@ with tab_statistik_utama:
                     
                     reg_cloud = scatter_cloud.transform_regression('Awan_%', 'Fajar_Alt').mark_line(color='#d9534f', strokeWidth=2)
                     st.altair_chart(scatter_cloud + reg_cloud, use_container_width=True)
-                    st.caption("ℹ️ *Tren:* Fluktuasi awan di ufuk timur menyebabkan pergeseran pembacaan titik belok fajar.")
+
+        # --- SUB-TAB 4: PETA SPASIAL ---
+        with sub_peta:
+            st.subheader("🗺️ Peta Persebaran Stasiun Pengamatan")
+            st.markdown("Visualisasi geografis titik-titik lokasi perekaman data SQM yang terhubung ke dalam jaringan observasi Kawakib Institute.")
+            
+            # Memastikan nilai Lintang dan Bujur berupa numerik yang sah
+            df_stat['Lintang'] = pd.to_numeric(df_stat.get('Lintang', pd.Series(dtype=float)), errors='coerce')
+            df_stat['Bujur'] = pd.to_numeric(df_stat.get('Bujur', pd.Series(dtype=float)), errors='coerce')
+            
+            # Membersihkan baris yang tidak memiliki koordinat
+            df_peta = df_stat.dropna(subset=['Lintang', 'Bujur']).copy()
+            
+            if df_peta.empty:
+                st.info("📍 Belum ada data stasiun dengan titik koordinat Lintang & Bujur yang sah di dalam database.")
+            else:
+                # Mengubah nama kolom agar dikenali langsung sebagai koordinat spasial oleh st.map() Streamlit
+                df_map = df_peta.rename(columns={'Lintang': 'lat', 'Bujur': 'lon'})
+                
+                # Menampilkan peta dengan ukuran penuh dan zoom default agar Indonesia terlihat
+                st.map(df_map[['lat', 'lon']], zoom=4)
+                
+                st.markdown("<br>**📍 Detail Rekap Lokasi Stasiun & Hasil Fotometri:**", unsafe_allow_html=True)
+                st.dataframe(
+                    df_peta[['Tanggal', 'Kota', 'Lokasi', 'Lintang', 'Bujur', 'Garis_Dasar', 'Fajar_Alt']], 
+                    use_container_width=True
+                )
     else: 
         st.info("Basis data masih kosong. Silakan lakukan sinkronisasi atau unggah data terlebih dahulu.")
 
