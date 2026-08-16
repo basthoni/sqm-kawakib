@@ -357,7 +357,6 @@ def process_and_save_data(file_paths, method, df_existing):
             if method == "SIGMAG-STAB": onset_alt, onset_msas = analyze_sigmag(am, bin_deg, n_consec)
             else: onset_alt, onset_msas = analyze_sigmoid(am)
             
-            # --- FILTER UTAMA MENDUNG BERDASARKAN SQM UFUK TIMUR (JENDELA ±15 MENIT) ---
             cloud_pct, df_win = analyze_cloud_cover(am, onset_alt, window_minutes=15)
             sat_cloud_pct = get_satellite_cloud_cover(lat, lon, date_str) 
             
@@ -509,7 +508,7 @@ with tab_histori:
         st.download_button("⬇️ Unduh CSV", df_cloud.to_csv(index=False).encode('utf-8'), 'Rekap_Kawakib_Cloud.csv', 'text/csv')
 
 # =====================================================================
-# MENU UTAMA: STATISTIK & ANALISIS (3 SUB-TAB)
+# MENU UTAMA: STATISTIK & ANALISIS (3 SUB-TAB DENGAN TABEL DETAIL ANOMALI)
 # =====================================================================
 with tab_statistik_utama:
     st.header("📊 Pusat Analisis Statistik & Korelasi Variabel")
@@ -517,7 +516,7 @@ with tab_statistik_utama:
     
     sub_ideal, sub_anomali, sub_korelasi = st.tabs([
         "🌟 Sub-Tab 1: Data Ideal (Kemenag)", 
-        "⚠️ Sub-Tab 2: Data Anomali", 
+        "⚠️ Sub-Tab 2: Data Anomali & Pemeriksaan", 
         "📈 Sub-Tab 3: Korelasi Variabel"
     ])
     
@@ -570,9 +569,9 @@ with tab_statistik_utama:
             fc3.success(f"**-19.0° s/d -18.5°:** \n### {len(df_fajar3)} Data ({df_fajar3['Fajar_Alt'].mean():.2f}°)" if not df_fajar3.empty else "**-19.0° s/d -18.5°:** \n### 0 Data (-)")
             fc4.success(f"**Lebih dangkal dari -18.5°:** \n### {len(df_fajar4)} Data ({df_fajar4['Fajar_Alt'].mean():.2f}°)" if not df_fajar4.empty else "**> -18.5°:** \n### 0 Data (-)")
 
-        # --- SUB-TAB 2: ANOMALI ---
+        # --- SUB-TAB 2: ANOMALI & TABEL RINCIAN KELOMPOK ---
         with sub_anomali:
-            st.subheader("⚠️ Analisis Data Anomali & Kasus Ditolak")
+            st.subheader("⚠️ Analisis Data Anomali & Tabel Pemeriksaan Kasus")
             df_anomali = df_stat[~((df_stat['Garis_Dasar'] >= 20.5) & (df_stat['Awan_%'] <= 5.0) & (df_stat['Koreksi_Bulan'] == 'Pasif'))].dropna(subset=['Fajar_Alt'])
             
             if df_anomali.empty:
@@ -590,10 +589,10 @@ with tab_statistik_utama:
                 df_a4 = df_anomali[df_anomali['Fajar_Alt'] > -17.5]
                 
                 anc1, anc2, anc3, anc4 = st.columns(4)
-                anc1.warning(f"**< -18.5°:** \n### {len(df_a1)} Data ({df_a1['Fajar_Alt'].mean():.2f}°)" if not df_a1.empty else "**< -18.5°:** \n### 0 Data (-)")
-                anc2.warning(f"**-18.5° s/d -18.0°:** \n### {len(df_a2)} Data ({df_a2['Fajar_Alt'].mean():.2f}°)" if not df_a2.empty else "**-18.5° s/d -18.0°:** \n### 0 Data (-)")
-                anc3.warning(f"**-18.0° s/d -17.5°:** \n### {len(df_a3)} Data ({df_a3['Fajar_Alt'].mean():.2f}°)" if not df_a3.empty else "**-18.0° s/d -17.5°:** \n### 0 Data (-)")
-                anc4.warning(f"**> -17.5°:** \n### {len(df_a4)} Data ({df_a4['Fajar_Alt'].mean():.2f}°)" if not df_a4.empty else "**> -17.5°:** \n### 0 Data (-)")
+                anc1.warning(f"**< -18.5°:** \n### {len(df_a1)} Data")
+                anc2.warning(f"**-18.5° s/d -18.0°:** \n### {len(df_a2)} Data")
+                anc3.warning(f"**-18.0° s/d -17.5°:** \n### {len(df_a3)} Data")
+                anc4.warning(f"**> -17.5°:** \n### {len(df_a4)} Data")
 
                 st.markdown("<br>", unsafe_allow_html=True)
                 hist_anom = alt.Chart(df_anomali).mark_bar(color='#d9534f', opacity=0.8).encode(
@@ -602,6 +601,41 @@ with tab_statistik_utama:
                     tooltip=['count()', alt.Tooltip('mean(Fajar_Alt):Q', format='.2f', title='Rata-rata Alt')]
                 ).properties(height=300)
                 st.altair_chart(hist_anom, use_container_width=True)
+
+                st.divider()
+                st.subheader("🔍 Tabel Rincian Data Berdasarkan Kelompok Anomali")
+                st.markdown("Pilih kelompok rentang kedalaman di bawah ini untuk menampilkan daftar data spesifik beserta tautan grafiknya:")
+                
+                pilihan_kelompok = st.selectbox(
+                    "Pilih Kelompok Anomali untuk Diperiksa:",
+                    [
+                        f"Kelompok 1: Kedalaman < -18.5° ({len(df_a1)} Data)",
+                        f"Kelompok 2: Kedalaman -18.5° s/d -18.0° ({len(df_a2)} Data)",
+                        f"Kelompok 3: Kedalaman -18.0° s/d -17.5° ({len(df_a3)} Data)",
+                        f"Kelompok 4: Kedalaman > -17.5° ({len(df_a4)} Data)"
+                    ]
+                )
+                
+                # Menentukan dataframe yang dipilih berdasarkan dropdown
+                if "Kelompok 1" in pilihan_kelompok: df_tampil = df_a1
+                elif "Kelompok 2" in pilihan_kelompok: df_tampil = df_a2
+                elif "Kelompok 3" in pilihan_kelompok: df_tampil = df_a3
+                else: df_tampil = df_a4
+                
+                st.dataframe(
+                    df_tampil[['Tanggal', 'Kota', 'Lokasi', 'Metode', 'Garis_Dasar', 'Awan_%', 'Koreksi_Bulan', 'Fajar_Alt', 'Link_Grafik', 'Link_DataMentah']], 
+                    use_container_width=True,
+                    column_config={
+                        "Link_Grafik": st.column_config.LinkColumn("Link Grafik", display_text="🖼️ Lihat Grafik Plot"),
+                        "Link_DataMentah": st.column_config.LinkColumn("Link Data Mentah", display_text="📁 Buka File Mentah")
+                    }
+                )
+                st.download_button(
+                    "⬇️ Unduh CSV Kelompok Ini", 
+                    df_tampil.to_csv(index=False).encode('utf-8'), 
+                    f'Anomali_{pilihan_kelompok.split(":")[0].replace(" ", "_")}.csv', 
+                    'text/csv'
+                )
 
         # --- SUB-TAB 3: KORELASI VARIABEL ---
         with sub_korelasi:
