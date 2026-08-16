@@ -205,26 +205,25 @@ def proses_file_masuk(file_input):
     file_ekstensi = os.path.splitext(file_input)[1].lower()
     file_standar_sementara = file_input + "_standardized.dat"
     
-    if file_ekstensi == '.dat':
+    try:
         with open(file_input, 'r', encoding='utf-8', errors='ignore') as f:
-            baris_pertama = f.readline()
-        if baris_pertama.startswith('#'): file_aktif = file_input
-        else: file_aktif = file_input
-    elif file_ekstensi == '.txt':
-        try:
-            with open(file_input, 'r', encoding='utf-8', errors='ignore') as f:
-                content_sample = f.read(2000)
-            
-            if 'Date/Time' in content_sample and ',' in content_sample:
-                normalisasi_ke_pysqm(file_input, file_standar_sementara)
-                file_aktif = file_standar_sementara
-            elif 'UTC_DateTime' in content_sample or 'MPSAS' in content_sample:
-                normalisasi_lapan_ke_pysqm(file_input, file_standar_sementara)
-                file_aktif = file_standar_sementara
-            else: 
-                file_aktif = file_input
-        except: file_aktif = file_input
-    else: file_aktif = file_input
+            content_sample = f.read(2000)
+    except:
+        content_sample = ""
+
+    # 1. Deteksi Format Bosscha
+    if 'Date/Time' in content_sample and ',' in content_sample:
+        normalisasi_ke_pysqm(file_input, file_standar_sementara)
+        file_aktif = file_standar_sementara
+        
+    # 2. Deteksi Format LAPAN (Mendukung .dat maupun .txt dengan header lon/lat atau kolom UTC_DateTime)
+    elif 'UTC_DateTime' in content_sample or 'MPSAS' in content_sample or ('#' in content_sample and 'lon' in content_sample.lower()):
+        normalisasi_lapan_ke_pysqm(file_input, file_standar_sementara)
+        file_aktif = file_standar_sementara
+        
+    # 3. Format PySQM Standar
+    else: 
+        file_aktif = file_input
         
     return file_aktif
 
