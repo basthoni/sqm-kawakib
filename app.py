@@ -539,17 +539,14 @@ with tab_dashboard:
         c3.metric("Total Rata-rata (Pembanding)", f"{rata_rata_total:.2f}°", f"{selisih_total:+.2f}° dari -20°", delta_color="inverse")
         c4.metric("Data Ideal Tersaring", len(df_kemenag_ideal))
         
-        # --- BLOK BARU: DISTRIBUSI DATA IDEAL DENGAN RATA-RATA FAJAR ---
+        # --- BLOK 1: DISTRIBUSI BERDASARKAN KECERLANGAN (MPSAS) ---
         st.markdown(f"<br><b>Distribusi {len(df_kemenag_ideal)} Data Ideal Berdasarkan Kecerlangan Langit (Garis Dasar):</b>", unsafe_allow_html=True)
         
         df_bin1 = df_kemenag_ideal[(df_kemenag_ideal['Garis_Dasar'] >= 20.5) & (df_kemenag_ideal['Garis_Dasar'] < 21.0)]
         df_bin2 = df_kemenag_ideal[(df_kemenag_ideal['Garis_Dasar'] >= 21.0) & (df_kemenag_ideal['Garis_Dasar'] < 21.5)]
         df_bin3 = df_kemenag_ideal[df_kemenag_ideal['Garis_Dasar'] >= 21.5]
         
-        len1 = len(df_bin1)
-        len2 = len(df_bin2)
-        len3 = len(df_bin3)
-        
+        len1, len2, len3 = len(df_bin1), len(df_bin2), len(df_bin3)
         mean1 = f"({df_bin1['Fajar_Alt'].mean():.2f}°)" if len1 > 0 else "(-)"
         mean2 = f"({df_bin2['Fajar_Alt'].mean():.2f}°)" if len2 > 0 else "(-)"
         mean3 = f"({df_bin3['Fajar_Alt'].mean():.2f}°)" if len3 > 0 else "(-)"
@@ -558,6 +555,28 @@ with tab_dashboard:
         bc1.info(f"**20.50 – 20.99 Mpsas:** \n### {len1} Data {mean1}")
         bc2.info(f"**21.00 – 21.49 Mpsas:** \n### {len2} Data {mean2}")
         bc3.info(f"**≥ 21.50 Mpsas:** \n### {len3} Data {mean3}")
+        
+        # --- BLOK 2: DISTRIBUSI BERDASARKAN KEDALAMAN (FAJAR ALT) ---
+        st.markdown(f"<br><b>Distribusi {len(df_kemenag_ideal)} Data Ideal Berdasarkan Kedalaman Fajar (Titik Belok):</b>", unsafe_allow_html=True)
+        
+        # Menggunakan logika kedalaman: < -19.5 artinya lebih dalam secara minus (misal: -19.8, -20.2)
+        df_fajar1 = df_kemenag_ideal[df_kemenag_ideal['Fajar_Alt'] <= -19.5]
+        df_fajar2 = df_kemenag_ideal[(df_kemenag_ideal['Fajar_Alt'] > -19.5) & (df_kemenag_ideal['Fajar_Alt'] <= -19.0)]
+        df_fajar3 = df_kemenag_ideal[(df_kemenag_ideal['Fajar_Alt'] > -19.0) & (df_kemenag_ideal['Fajar_Alt'] <= -18.5)]
+        df_fajar4 = df_kemenag_ideal[df_kemenag_ideal['Fajar_Alt'] > -18.5]
+        
+        len_f1, len_f2, len_f3, len_f4 = len(df_fajar1), len(df_fajar2), len(df_fajar3), len(df_fajar4)
+        
+        mean_f1 = f"({df_fajar1['Fajar_Alt'].mean():.2f}°)" if len_f1 > 0 else "(-)"
+        mean_f2 = f"({df_fajar2['Fajar_Alt'].mean():.2f}°)" if len_f2 > 0 else "(-)"
+        mean_f3 = f"({df_fajar3['Fajar_Alt'].mean():.2f}°)" if len_f3 > 0 else "(-)"
+        mean_f4 = f"({df_fajar4['Fajar_Alt'].mean():.2f}°)" if len_f4 > 0 else "(-)"
+        
+        fc1, fc2, fc3, fc4 = st.columns(4)
+        fc1.success(f"**Lebih dalam dari -19.5°:** \n### {len_f1} Data {mean_f1}")
+        fc2.success(f"**-19.5° s/d -19.0°:** \n### {len_f2} Data {mean_f2}")
+        fc3.success(f"**-19.0° s/d -18.5°:** \n### {len_f3} Data {mean_f3}")
+        fc4.success(f"**Lebih dangkal dari -18.5°:** \n### {len_f4} Data {mean_f4}")
         # ---------------------------------------------------------------
         
         st.divider()
