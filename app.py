@@ -145,7 +145,9 @@ def save_to_google_sheets(data_dict):
         else: 
             sheet.append_row(values)
         return True
-    except: return False
+    except Exception as e:
+        print(f"Error saving to sheets: {e}")
+        return False
 
 def load_data_from_google_sheets():
     client = get_gsheets_client()
@@ -362,9 +364,8 @@ def process_and_save_data(file_paths, method, df_existing):
             
             base_series = am[am["sun_alt"] < -20]["mpsas_corrected"]
             baseline_mpsas = base_series.median() if not base_series.empty else am["mpsas_corrected"].max()
-            lp_category, _ = categorize_light_pollution(baseline_mpsas)
+            lp_category, expected_alt = categorize_light_pollution(baseline_mpsas)
             
-            # --- AUTO GEOCODING ---
             kota_akurat = get_city_from_coords(lat, lon)
             if kota_akurat == "Unknown":
                 kota = re.split(r'[-,\|]', site)[-1].strip()
@@ -519,7 +520,6 @@ with tab_dashboard:
         if 'Kota' not in df_stat.columns and 'Lokasi' in df_stat.columns:
             df_stat['Kota'] = df_stat['Lokasi'].apply(lambda x: re.split(r'[-,\|]', str(x))[-1].strip())
             
-        # --- UPDATE: FILTER DIKEMBALIKAN KE >= 20.5 MPSAS ---
         df_kemenag_ideal = df_stat[
             (df_stat['Garis_Dasar'] >= 20.5) & 
             (df_stat['Awan_%'] <= 5.0) & 
@@ -536,8 +536,21 @@ with tab_dashboard:
         c1, c2, c3, c4 = st.columns(4)
         c1.metric("Total Data Keseluruhan", len(df_stat))
         c2.metric("Rata-rata Standar Kemenag (Ideal)", f"{rata_rata_kemenag:.2f}°", f"{selisih_kemenag:+.2f}° dari -20°", delta_color="inverse")
-        c3.metric("Total Rata-rata (PemPembanding)", f"{rata_rata_total:.2f}°", f"{selisih_total:+.2f}° dari -20°", delta_color="inverse")
+        c3.metric("Total Rata-rata (Pembanding)", f"{rata_rata_total:.2f}°", f"{selisih_total:+.2f}° dari -20°", delta_color="inverse")
         c4.metric("Data Ideal Tersaring", len(df_kemenag_ideal))
+        
+        # --- BLOK BARU: DISTRIBUSI DATA IDEAL BERDASARKAN KECERLANGAN ---
+        st.markdown("<br><b>Distribusi 123 Data Ideal Berdasarkan Kecerlangan Langit (Garis Dasar):</b>", unsafe_allow_html=True)
+        
+        bin1 = len(df_kemenag_ideal[(df_kemenag_ideal['Garis_Dasar'] >= 20.5) & (df_kemenag_ideal['Garis_Dasar'] < 21.0)])
+        bin2 = len(df_kemenag_ideal[(df_kemenag_ideal['Garis_Dasar'] >= 21.0) & (df_kemenag_ideal['Garis_Dasar'] < 21.5)])
+        bin3 = len(df_kemenag_ideal[df_kemenag_ideal['Garis_Dasar'] >= 21.5])
+        
+        bc1, bc2, bc3 = st.columns(3)
+        bc1.info(f"**20.50 – 20.99 Mpsas:** \n### {bin1} Data")
+        bc2.info(f"**21.00 – 21.49 Mpsas:** \n### {bin2} Data")
+        bc3.info(f"**≥ 21.50 Mpsas:** \n### {bin3} Data")
+        # ---------------------------------------------------------------
         
         st.divider()
         st.subheader("📉 Komparasi Kedalaman Fajar per Kota (Filter Standar Kemenag: Garis Dasar ≥ 20.5 Mpsas)")
@@ -626,10 +639,10 @@ with tab_algoritma:
     Persamaan fungsi logistik yang digunakan:
     $$ f(x) = \frac{L}{1 + e^{-k(x - x_0)}} + b $$
     Dimana:
-    *   $L$ : Amplitudo maksimal kurva (Selisih gelap malam dan terang pagi)
-    *   $k$ : Laju kecuraman transisi fajar (Tingkat hamburan Rayleigh)
-    *   $x_0$ : Titik tengah transisi fajar
-    *   $b$ : Batas asimtotik (*Garis dasar/Baseline langit malam*)
+    * $L$ : Amplitudo maksimal kurva (Selisih gelap malam dan terang pagi)
+    * $k$ : Laju kecuraman transisi fajar (Tingkat hamburan Rayleigh)
+    * $x_0$ : Titik tengah transisi fajar
+    * $b$ : Batas asimtotik (*Garis dasar/Baseline langit malam*)
     Titik awal fajar ditarik dari nilai $x$ (Altitude) di mana kurva mulai menyimpang dari nilai $b$.
 
     ---
@@ -637,9 +650,8 @@ with tab_algoritma:
     ### 3. Validasi Lingkungan Cerdas (*Smart Cloud & Satellite Validation*)
     Pendeteksian fajar seringkali mengalami *False Positive* (Positif Palsu) akibat kondisi mikroklimat lokal. Untuk memitigasi hal ini, aplikasi menggunakan validasi ganda:
 
-    *   **Validasi Mikro (Sensor SQM - *Jendela Kritis $\pm 15$ Menit*):** 
-        Algoritma membidik rentang waktu tepat 15 menit sebelum hingga sesudah titik belok fajar. Sistem menghitung *Rolling Standard Deviation* pada rentang sempit ini. Jika fluktuasi melebihi batas dinamis, observasi dilabeli memiliki gangguan awan.
-    *   **Validasi Makro (Satelit Open-Meteo):**
+    * **Validasi Mikro (Sensor SQM - *Jendela Kritis $\pm 15$ Menit*):** Algoritma membidik rentang waktu tepat 15 menit sebelum hingga sesudah titik belok fajar. Sistem menghitung *Rolling Standard Deviation* pada rentang sempit ini. Jika fluktuasi melebihi batas dinamis, observasi dilabeli memiliki gangguan awan.
+    * **Validasi Makro (Satelit Open-Meteo):**
         Sistem mengirim titik koordinat observasi ke API Satelit Cuaca Global (*Reverse Geocoding*) untuk mengekstrak persentase tutupan awan dari luar angkasa. 
     
     > 💡 **Anomali Albedo Perkotaan (Kenapa Satelit Wajib Ada?):**
