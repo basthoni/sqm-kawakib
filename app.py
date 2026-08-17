@@ -279,8 +279,7 @@ def load_sqm_data(file_path):
     if not am.empty:
         am["sun_alt"] = solar_alt(am["local_dt"], lat, lon, utc_offset)
         am = am.sort_values("sun_alt").reset_index(drop=True)
-    date_str = am["local_dt"].iloc[0].strftime("%Y-%m-%d") if not am.empty else "Unknown"
-    return am, site, lat, lon, utc_offset, date_str, processed_path
+    return am, site, lat, lon, utc_offset, processed_path
 
 def apply_moonlight_correction(am, lat, lon, utc_offset):
     obs, moon = ephem.Observer(), ephem.Moon()
@@ -370,19 +369,20 @@ def analyze_sigmoid(am):
 def process_and_save_data(file_paths, method, df_existing):
     progress_bar = st.progress(0)
     status_text = st.empty()
+    total_files = len(file_paths)
+    
     for idx, path in enumerate(file_paths):
-        status_text.text(f"Memproses {idx+1}/{len(file_paths)}: {os.path.basename(path)}")
+        status_text.text(f"Memproses {idx+1}/{total_files}: {os.path.basename(path)}")
         try:
-            am, site, lat, lon, utc_offset, date_str, processed_path = load_sqm_data(path)
-            if am.empty: continue
+            am_full, site, lat, lon, utc_offset, processed_path = load_sqm_data(path)
+            if am_full.empty: continue
             
-            # --- PERBAIKAN PENAMAAN LAPAN (DETEKSI OSM & NAMA FILE) ---
+            # --- PENAMAAN LAPAN CERDAS (BERDASARKAN KOTA / NAMA FILE) ---
             kota = get_city_from_coords(lat, lon)
             if "UNKNOWN" in site.upper() or "LAPAN" in site.upper() or site.strip() == "":
                 if kota != "Unknown":
                     site = f"Stasiun LAPAN {kota}"
                 else:
-                    # Fallback lacak dari nama file (jika OSM limit/offline)
                     fname = os.path.basename(path).upper()
                     if "BIAK" in fname: site = "Stasiun LAPAN Biak"
                     elif "PONTIANAK" in fname: site = "Stasiun LAPAN Pontianak"
@@ -393,59 +393,69 @@ def process_and_save_data(file_paths, method, df_existing):
                     elif "AGAM" in fname or "KOTO" in fname: site = "Stasiun LAPAN Kototabang"
                     else: site = "Stasiun LAPAN"
             if kota == "Unknown": kota = re.split(r'[-,\|]', site)[-1].strip()
-            # ----------------------------------------------------------
 
-            am, is_corrected = apply_moonlight_correction(am, lat, lon, utc_offset)
-            bin_deg, n_consec = get_dynamic_params(am)
-            if method == "SIGMAG-STAB": onset_alt, onset_msas = analyze_sigmag(am, bin_deg, n_consec)
-            else: onset_alt, onset_msas = analyze_sigmoid(am)
+            # --- PECAH OTOMATIS BULANAN MENJADI PER HARI (OBSERVASI MALAM/FAJAR) ---
+            am_full["obs_date"] = am_full["local_dt"].dt.date
             
-            cloud_pct, df_win = analyze_cloud_cover(am, onset_alt, window_minutes=15)
-            sat_cloud_pct = get_satellite_cloud_cover(lat, lon, date_str) 
-            base_series = am[am["sun_alt"] < -20]["mpsas_corrected"]
-            baseline_mpsas = base_series.median() if not base_series.empty else am["mpsas_corrected"].max()
-            lp_category, expected_alt = categorize_light_pollution(baseline_mpsas)
-            
-            fig_width = max(6, min(15, len(am) / 50))
-            fig, ax = plt.subplots(figsize=(fig_width, 5))
-            ax.plot(am["sun_alt"], am["mpsas_corrected"], color="#1A3C40", alpha=0.8, linewidth=1.5, label="SQM Terkoreksi")
-            if is_corrected: ax.plot(am["sun_alt"], am["mpsas"], color="#808080", alpha=0.4, linestyle=":", label="SQM Mentah")
-            if onset_alt is not None:
-                ax.axvline(onset_alt, color="#1D9A9C", linestyle="--", linewidth=2, label=f"Titik Belok ({onset_alt:.2f}°)")
-                ax.scatter([onset_alt], [onset_msas], color="#1D9A9C", s=60, zorder=5)
-            ax.invert_yaxis()
-            ax.set_xlim(-30, -5)
-            ax.set_xlabel("Ketinggian Matahari (Derajat)", fontweight='bold')
-            ax.set_ylabel("Kecerlangan Langit (Mpsas)", fontweight='bold')
-            ax.set_title(f"{site} | {date_str} [{method}]", color="#1A3C40", fontweight='bold')
-            ax.grid(True, linestyle=":", alpha=0.6)
-            ax.legend(loc="upper right")
-            
-            plot_url, raw_url = "", ""
-            if not df_existing.empty and {"Tanggal", "Lokasi", "Metode"}.issubset(df_existing.columns):
-                match = df_existing[(df_existing["Tanggal"].astype(str).str.strip() == str(date_str)) & (df_existing["Lokasi"].astype(str).str.strip() == str(site)) & (df_existing["Metode"].astype(str).str.strip() == str(method))]
-                if not match.empty:
-                    plot_url = str(match.iloc[0].get("Link_Grafik", match.iloc[0].get("Link Grafik", ""))).strip()
-                    raw_url = str(match.iloc[0].get("Link_DataMentah", match.iloc[0].get("Link Data Mentah", ""))).strip()
+            for date_obj, am_sub in am_full.groupby("obs_date"):
+                date_str = str(date_obj)
+                if len(am_sub) < 10: continue
+                
+                am_sub = am_sub.sort_values("sun_alt").reset_index(drop=True)
+                am_sub, is_corrected = apply_moonlight_correction(am_sub, lat, lon, utc_offset)
+                
+                bin_deg, n_consec = get_dynamic_params(am_sub)
+                if method == "SIGMAG-STAB": onset_alt, onset_msas = analyze_sigmag(am_sub, bin_deg, n_consec)
+                else: onset_alt, onset_msas = analyze_sigmoid(am_sub)
+                
+                cloud_pct, df_win = analyze_cloud_cover(am_sub, onset_alt, window_minutes=15)
+                sat_cloud_pct = get_satellite_cloud_cover(lat, lon, date_str) 
+                base_series = am_sub[am_sub["sun_alt"] < -20]["mpsas_corrected"]
+                baseline_mpsas = base_series.median() if not base_series.empty else am_sub["mpsas_corrected"].max()
+                lp_category, expected_alt = categorize_light_pollution(baseline_mpsas)
+                
+                fig_width = max(6, min(15, len(am_sub) / 50))
+                fig, ax = plt.subplots(figsize=(fig_width, 5))
+                ax.plot(am_sub["sun_alt"], am_sub["mpsas_corrected"], color="#1A3C40", alpha=0.8, linewidth=1.5, label="SQM Terkoreksi")
+                if is_corrected: ax.plot(am_sub["sun_alt"], am_sub["mpsas"], color="#808080", alpha=0.4, linestyle=":", label="SQM Mentah")
+                if onset_alt is not None:
+                    ax.axvline(onset_alt, color="#1D9A9C", linestyle="--", linewidth=2, label=f"Titik Belok ({onset_alt:.2f}°)")
+                    ax.scatter([onset_alt], [onset_msas], color="#1D9A9C", s=60, zorder=5)
+                ax.invert_yaxis()
+                ax.set_xlim(-30, -5)
+                ax.set_xlabel("Ketinggian Matahari (Derajat)", fontweight='bold')
+                ax.set_ylabel("Kecerlangan Langit (Mpsas)", fontweight='bold')
+                ax.set_title(f"{site} | {date_str} [{method}]", color="#1A3C40", fontweight='bold')
+                ax.grid(True, linestyle=":", alpha=0.6)
+                ax.legend(loc="upper right")
+                
+                plot_url, raw_url = "", ""
+                if not df_existing.empty and {"Tanggal", "Lokasi", "Metode"}.issubset(df_existing.columns):
+                    match = df_existing[(df_existing["Tanggal"].astype(str).str.strip() == str(date_str)) & (df_existing["Lokasi"].astype(str).str.strip() == str(site)) & (df_existing["Metode"].astype(str).str.strip() == str(method))]
+                    if not match.empty:
+                        plot_url = str(match.iloc[0].get("Link_Grafik", match.iloc[0].get("Link Grafik", ""))).strip()
+                        raw_url = str(match.iloc[0].get("Link_DataMentah", match.iloc[0].get("Link Data Mentah", ""))).strip()
 
-            if not plot_url: plot_url = upload_plot_to_cloudinary(fig, f"Plot_{site}_{date_str}_{method}".replace(" ", "_"))
-            if not raw_url: raw_url = upload_raw_to_cloudinary(processed_path, f"Raw_{site}_{date_str}_{method}.dat".replace(" ", "_"))
-            
-            save_to_google_sheets({
-                "Tanggal": date_str, "Kota": kota, "Lokasi": site, "Lintang": lat, "Bujur": lon, 
-                "Metode": method, "Bortle": lp_category.split("(")[-1].replace(")",""),
-                "Awan_%": round(cloud_pct, 1), "Awan_Satelit_%": sat_cloud_pct if sat_cloud_pct is not None else "",
-                "Koreksi_Bulan": "Aktif" if is_corrected else "Pasif",
-                "Garis_Dasar": round(baseline_mpsas, 2), "Fajar_Alt": round(onset_alt, 2) if onset_alt is not None else "",
-                "Fajar_MSAS": round(onset_msas, 2) if onset_msas is not None else "",
-                "Link_Grafik": plot_url, "Link_DataMentah": raw_url 
-            })
-            st.pyplot(fig)
-            plt.close(fig)
+                if not plot_url: plot_url = upload_plot_to_cloudinary(fig, f"Plot_{site}_{date_str}_{method}".replace(" ", "_"))
+                if not raw_url: raw_url = upload_raw_to_cloudinary(processed_path, f"Raw_{site}_{date_str}_{method}.dat".replace(" ", "_"))
+                
+                save_to_google_sheets({
+                    "Tanggal": date_str, "Kota": kota, "Lokasi": site, "Lintang": lat, "Bujur": lon, 
+                    "Metode": method, "Bortle": lp_category.split("(")[-1].replace(")",""),
+                    "Awan_%": round(cloud_pct, 1), "Awan_Satelit_%": sat_cloud_pct if sat_cloud_pct is not None else "",
+                    "Koreksi_Bulan": "Aktif" if is_corrected else "Pasif",
+                    "Garis_Dasar": round(baseline_mpsas, 2), "Fajar_Alt": round(onset_alt, 2) if onset_alt is not None else "",
+                    "Fajar_MSAS": round(onset_msas, 2) if onset_msas is not None else "",
+                    "Link_Grafik": plot_url, "Link_DataMentah": raw_url 
+                })
+                st.pyplot(fig)
+                plt.close(fig)
+                
         except Exception as e: st.error(f"Gagal memproses {os.path.basename(path)}: {str(e)}")
-        progress_bar.progress((idx + 1) / len(file_paths))
+        progress_bar.progress((idx + 1) / total_files)
+        
     status_text.text("")
-    st.success("🎉 Selesai.")
+    st.success("🎉 Selesai memproses seluruh data harian!")
 
 with st.sidebar:
     st.header("⚙️ Pengaturan")
@@ -670,7 +680,7 @@ with tab_statistik_utama:
         st.info("Basis data masih kosong.")
 
 # =====================================================================
-# TAB METODOLOGI - VERSI KOMPREHENSIF DENGAN LATEX MATEMATIS
+# TAB METODOLOGI - VERSI KOMPREHENSIF DENGAN LATEX MATEMATIS UTUH
 # =====================================================================
 with tab_algoritma:
     st.header("📖 Metodologi, Landasan Matematis & Spesifikasi Algoritma")
