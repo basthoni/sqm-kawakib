@@ -794,22 +794,23 @@ with tab_statistik_utama:
                 
                 with col_k1:
                     st.markdown("**1. Korelasi Polusi Cahaya vs Titik Belok Fajar**")
-                    scatter_lp = alt.Chart(df_corr).mark_circle(size=60, color='#1D9A9C').encode(
+                    # Ganti mark_circle ke mark_point agar tooltip tidak tertimpa/menghasilkan tabel ganda di Altair
+                    scatter_lp = alt.Chart(df_corr).mark_point(size=60, color='#1D9A9C', filled=True).encode(
                         x=alt.X('Garis_Dasar:Q', title='Garis Dasar Kecerlangan (Mpsas)', scale=alt.Scale(zero=False)),
                         y=alt.Y('Fajar_Alt:Q', title='Titik Belok Fajar (°)', scale=alt.Scale(domain=[-22, -12])),
                         tooltip=['Kota', 'Tanggal', 'Garis_Dasar', 'Fajar_Alt']
-                    ).interactive().properties(height=320)
+                    ).properties(height=320)
                     
                     reg_lp = scatter_lp.transform_regression('Garis_Dasar', 'Fajar_Alt').mark_line(color='#d9534f', strokeWidth=2)
                     st.altair_chart(scatter_lp + reg_lp, use_container_width=True)
 
                 with col_k2:
                     st.markdown("**2. Korelasi Gangguan Awan Ufuk vs Titik Belok Fajar**")
-                    scatter_cloud = alt.Chart(df_corr).mark_circle(size=60, color='#4A90E2').encode(
+                    scatter_cloud = alt.Chart(df_corr).mark_point(size=60, color='#4A90E2', filled=True).encode(
                         x=alt.X('Awan_%:Q', title='Persentase Awan SQM Ufuk (%)', scale=alt.Scale(domain=[0, 100])),
                         y=alt.Y('Fajar_Alt:Q', title='Titik Belok Fajar (°)', scale=alt.Scale(domain=[-22, -12])),
                         tooltip=['Kota', 'Tanggal', 'Awan_%', 'Fajar_Alt']
-                    ).interactive().properties(height=320)
+                    ).properties(height=320)
                     
                     reg_cloud = scatter_cloud.transform_regression('Awan_%', 'Fajar_Alt').mark_line(color='#d9534f', strokeWidth=2)
                     st.altair_chart(scatter_cloud + reg_cloud, use_container_width=True)
@@ -824,11 +825,11 @@ with tab_statistik_utama:
                     hide_index=True,
                     column_config={
                         "Link_Grafik": st.column_config.LinkColumn(
-                            "Tautan Grafik", 
+                            "Link_Grafik", 
                             display_text="🖼️ Buka Grafik"
                         ),
                         "Link_DataMentah": st.column_config.LinkColumn(
-                            "Data Mentah", 
+                            "Link_DataMentah", 
                             display_text="📁 Unduh Data"
                         )
                     }
