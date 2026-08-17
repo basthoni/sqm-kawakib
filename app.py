@@ -487,7 +487,6 @@ with tab_statistik_utama:
     df_stat = load_data_from_google_sheets()
     
     if not df_stat.empty:
-        # PENGAMANAN TIPE DATA NUMERIK SECARA EKSTREM
         for col in ['Fajar_Alt', 'Awan_%', 'Garis_Dasar', 'Lintang', 'Bujur']:
             if col in df_stat.columns:
                 df_stat[col] = pd.to_numeric(df_stat[col], errors='coerce')
@@ -652,29 +651,92 @@ with tab_statistik_utama:
     else: 
         st.info("Basis data masih kosong.")
 
+# =====================================================================
+# TAB METODOLOGI - VERSI KOMPREHENSIF DENGAN LATEX MATEMATIS
+# =====================================================================
 with tab_algoritma:
     st.header("📖 Metodologi, Landasan Matematis & Spesifikasi Algoritma")
     st.markdown(r"""
-    Aplikasi ini dibangun sebagai instrumen riset falakiyah analitis yang menggabungkan astrometri klasik, pemrosesan sinyal digital (*Digital Signal Processing*), dan validasi orientasi ufuk timur.
+    Aplikasi web ini (Kawakib SQM Analyzer) bertindak sebagai sebuah *pipeline* fotometri otonom yang memadukan perhitungan astrometri fundamental, pemrosesan sinyal digital (*Digital Signal Processing*), dan algoritma *curve-fitting*. Tujuan utamanya adalah mengekstraksi titik belok **Fajar Sadiq** (Astronomical Dawn) dari rekaman data kecerlangan langit (Sky Quality Meter/SQM) yang diarahkan secara presisi ke ufuk timur.
 
-    ### 1. Ekstraksi Fajar: Metode SIGMAG-STAB & SIGMOID
-    *Smoothed Gradient - Median Absolute Deviation Stability* (SIGMAG-STAB) dan *Sigmoid Curve Fitting* dipadukan dengan pembacaan sensor SQM yang terarah presisi menghadap langsung ke ufuk timur tempat fajar menyingsing.
-
-    **A. Penghalusan Derau (Savitzky-Golay Filter)**
-    Data mentah dihaluskan menggunakan konvolusi polinomial untuk membuang *noise* frekuensi tinggi tanpa merusak bentuk asli transisi fajar:
-    $$ Y_j^* = \frac{1}{N} \sum_{i=-m}^{m} C_i Y_{j+i} $$
-
-    **B. Filter Mendung Berbasis Sensor Ufuk (Jendela Kritis $\pm 15$ Menit)**
-    Alih-alih menggunakan estimasi satelit makro yang mengasumsikan tutupan awan dari atas kepala (zenit), aplikasi ini memprioritaskan **Rolling Standard Deviation** dari sensor SQM tepat pada rentang 15 menit sebelum hingga sesudah titik belok fajar. Hal ini memastikan bahwa kejernihan di titik sasaran ufuk timur terekam secara mutlak dan objektif.
+    Berikut adalah rincian tahapan kalkulasi dan parameter matematis yang bekerja di balik layar:
 
     ---
 
-    ### 2. Klasifikasi Polusi Cahaya (Berdasarkan Disertasi Basthoni)
-    Aplikasi ini menggunakan **4 Skala Penyederhanaan Polusi Cahaya** (adaptasi 9 Skala Bortle Internasional) yang didasarkan secara empiris pada **Visibilitas Ketampakan Fajar Kadzib (*Zodiacal Light*)**:
-    1.  **Tipe 1 ($\ge 21.3$ Mpsas):** Langit Gelap (Fajar Kadzib tampak sangat jelas).
-    2.  **Tipe 2 ($20.2 - 21.29$ Mpsas):** Langit Agak Gelap (Pedesaan/Pinggiran).
-    3.  **Tipe 3 ($19.1 - 20.19$ Mpsas):** Langit Agak Terang (Suburban).
-    4.  **Tipe 4 ($< 19.1$ Mpsas):** Langit Terang/Urban (Pusat kota dengan polusi cahaya tinggi).
+    ### 1. Transformasi Astrometri & Posisi Matahari
+    Sebelum data dievaluasi, setiap baris rekaman waktu lokal (WIB/WITA/WIT) dikonversi menjadi Waktu Universal (UTC) dan Julian Date ($JD$). 
+    Ketinggian pusat piringan matahari (Solar Altitude, $h_\odot$) pada setiap stempel waktu dihitung menggunakan model mekanika langit standar.
 
-    > 🔬 **Filter Kalibrasi Kemenag:** Data ideal yang masuk ke dalam hitungan rata-rata nasional mensyaratkan Garis Dasar $\ge 20.5$ Mpsas, gangguan awan ufuk timur $\le 5\%$, dan bebas dari kontaminasi cahaya bulan.
+    **Persamaan Ketinggian Matahari ($h_\odot$):**
+    $$ \sin h_\odot = \sin \phi \sin \delta + \cos \phi \cos \delta \cos H $$
+    *Di mana:*
+    *   $\phi$ : Lintang geografis stasiun pengamat (Latitude)
+    *   $\delta$ : Deklinasi matahari (berubah berdasarkan hari dalam setahun)
+    *   $H$ : Sudut Jam (Hour Angle) matahari, bergantung pada Bujur pengamat (Longitude) dan waktu UTC.
+    
+    Data SQM kemudian difilter secara ketat; hanya rekaman dari tengah malam hingga siang hari (pengamatan fajar pagi) yang diproses secara kronologis terhadap $h_\odot$.
+
+    ---
+
+    ### 2. Kalibrasi Gangguan Cahaya Bulan (Moonlight Subtraction)
+    Kehadiran bulan di atas ufuk secara drastis dapat mencemari pembacaan SQM. Jika ketinggian bulan ($h_{moon} > 0^\circ$) dan persentase iluminasinya melebihi 5%, algoritma akan melakukan pengurangan kontribusi fluks cahaya bulan secara logaritmik.
+    
+    Fluks total terukur ($I_{tot}$) dan perkiraan kontribusi bulan ($I_{moon}$) dimodelkan sebagai:
+    $$ I_{tot} = 10^{-0.4 \times \text{MPSAS}_{\text{mentah}}} $$
+    $$ I_{moon} = \left( \text{Fraksi Fase} \times \sin h_{moon} \right) \times 10^{-0.4 \times 21.5} $$
+    
+    Nilai MPSAS Terkoreksi kemudian dikembalikan ke skala magnitudo:
+    $$ \text{MPSAS}_{\text{koreksi}} = -2.5 \times \log_{10} \left( \max(I_{tot} - I_{moon}, 10^{-0.4 \times 22.0}) \right) $$
+
+    ---
+
+    ### 3. Ekstraksi Fajar: Dua Metode Alternatif
+    Pengguna dapat memilih satu dari dua algoritma utama untuk mendeteksi kapan nilai kecerlangan langit (MPSAS) "patah" atau menurun tajam dari garis dasarnya (Fajar Sadiq).
+
+    #### A. Penghalusan Derau (Savitzky-Golay Filter)
+    Sebelum diekstraksi, data mentah dihaluskan menggunakan konvolusi polinomial untuk membuang *noise* frekuensi tinggi tanpa merusak bentuk kurva transisi fajar:
+    $$ Y_j^* = \frac{1}{N} \sum_{i=-m}^{m} C_i Y_{j+i} $$
+    *(Aplikasi menggunakan window filter yang beradaptasi secara dinamis terhadap kerapatan waktu sampel alat).*
+
+    #### B. Metode 1: SIGMAG-STAB (Smoothed Gradient - Median Absolute Deviation)
+    Metode ini bekerja dengan menganalisis laju perubahan kecerlangan terhadap ketinggian matahari, $\frac{d(\text{MPSAS})}{d(h_\odot)}$.
+    1.  **Garis Dasar Gradien:** Menghitung rata-rata gradien ($\mu$) dan stabilitas derau menggunakan *Median Absolute Deviation* (MAD) saat malam masih gelap pekat ($h_\odot < -20^\circ$):
+        $$ \sigma_{MAD} = 1.4826 \times \text{median}(|x_i - \text{median}(x)|) $$
+    2.  **Kondisi Pemicu (Trigger):** Titik belok fajar ditetapkan ketika gradien kurva secara berturut-turut melebihi ambang batas toleransi: 
+        $$ \text{Gradien} < (\mu - k \cdot \sigma_{MAD}) $$ 
+        Faktor pengali $k$ diatur secara dinamis (1.0 hingga 1.5) bergantung pada seberapa fluktuatif kondisi malam (besaran nilai $\sigma$).
+
+    #### C. Metode 2: SIGMOID (Logistic Curve Fitting)
+    Sebagai metode alternatif, penurunan kurva MPSAS akibat fajar dimodelkan menyerupai kurva Sigmoid terbalik menggunakan optimasi `scipy.optimize.curve_fit`.
+    $$ y(x) = \frac{L}{1 + e^{-k(x-x_0)}} + b $$
+    *Di mana:*
+    *   $L$ : Amplitudo penurunan kecerlangan.
+    *   $x_0$ : Ketinggian matahari pada titik belok maksimum (Inflection point).
+    *   $k$ : Tingkat kecuraman gradien fajar.
+    *   $b$ : Garis dasar kecerlangan malam (Baseline).
+    Titik awal fajar (onset) ditarik dari fungsi tersebut pada posisi di mana kurva mulai meluruh secara signifikan dari $b$.
+
+    ---
+
+    ### 4. Filter Ekstraksi Awan Dinamis Berbasis Sensor Ufuk
+    Aplikasi ini menggunakan pendekatan unik: **Jendela Kritis $\pm 15$ Menit**.
+    Alih-alih menggunakan data satelit awan global yang memindai area *zenit* (atas kepala), algoritma ini mengkalkulasi simpangan baku berjalan (*Rolling Standard Deviation*) secara ketat tepat 15 menit sebelum hingga 15 menit sesudah titik belok fajar.
+
+    Ambang batas fluktuasi awan dirumuskan secara dinamis mengikuti tingkat polusi cahaya lokal (Garis Dasar):
+    $$ \text{Ambang Toleransi} = \max\left(-0.04545 \times \text{Mean}_{\text{MPSAS}} + 1.0500, \, 0.05\right) $$
+    Jika fluktuasi melampaui nilai di atas, stasiun pengamatan dianggap tertutup awan tepat di arah ufuk timur, dan persentase gangguan awan otomatis dihitung.
+
+    ---
+
+    ### 5. Klasifikasi Polusi Cahaya (Berdasarkan Disertasi Basthoni)
+    Selain ekstraksi fajar, aplikasi memetakan kategori polusi cahaya dari masing-masing stasiun pengukuran. Garis Dasar kecerlangan (rata-rata saat $h_\odot < -20^\circ$) diklasifikasikan ke dalam **4 Skala Penyederhanaan Polusi Cahaya** (adaptasi praktis dari 9 Skala Bortle Internasional). 
+    
+    Skala ini didasarkan pada landasan empiris visibilitas ketampakan optis **Fajar Kadzib** (*Zodiacal Light*):
+    
+    1.  **Tipe 1 ($\ge 21.3$ Mpsas):** Langit Gelap (Fajar Kadzib tampak sangat jelas, minim distorsi).
+    2.  **Tipe 2 ($20.2 - 21.29$ Mpsas):** Langit Agak Gelap (Tipikal pedesaan atau observatorium pegunungan).
+    3.  **Tipe 3 ($19.1 - 20.19$ Mpsas):** Langit Agak Terang (Area suburban, Fajar Kadzib mulai sulit diamati dengan mata telanjang).
+    4.  **Tipe 4 ($< 19.1$ Mpsas):** Langit Terang/Urban (Pusat kota dengan *skyglow* dominan yang menutupi fenomena astronomi ufuk rendah).
+
+    > 🔬 **Filter Kalibrasi Standar Kementerian Agama:** Dalam analisis tingkat lanjut pada tab "Statistik", data SQM dinyatakan **Ideal** jika memenuhi 3 syarat absolut: (1) Garis Dasar $\ge 20.5$ Mpsas, (2) Gangguan awan ufuk timur $\le 5\%$, dan (3) Bebas dari kontaminasi terbitnya fase bulan.
     """)
