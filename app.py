@@ -66,24 +66,15 @@ try:
 except: pass
 
 def normalisasi_ke_pysqm(input_path, output_path):
-    """Fungsi otomatis mengubah file variatif (seperti format Bosscha berpemisah koma) ke standar PySQM"""
     df = pd.read_csv(input_path, sep=',')
-    
     df['Local_Time'] = pd.to_datetime(df['Date/Time'])
     df['UTC_Time'] = df['Local_Time'] - pd.Timedelta(hours=7)
-    
     df['Local_Str'] = df['Local_Time'].dt.strftime('%Y-%m-%dT%H:%M:%S.000')
     df['UTC_Str'] = df['UTC_Time'].dt.strftime('%Y-%m-%dT%H:%M:%S.000')
-    
     df_final = pd.DataFrame({
-        'col1': df['UTC_Str'],
-        'col2': df['Local_Str'],
-        'col3': df['Temp(C)'],
-        'col4': 0.000,          
-        'col5': 0.000,          
-        'col6': df['MPSAS']      
+        'col1': df['UTC_Str'], 'col2': df['Local_Str'], 'col3': df['Temp(C)'],
+        'col4': 0.000, 'col5': 0.000, 'col6': df['MPSAS']      
     })
-    
     with open(output_path, 'w') as f:
         f.write("# Definition of the community standard for skyglow observations 1.0\n")
         f.write("# URL: http://www.darksky.org/NSBM/sdf1.0.pdf\n")
@@ -120,14 +111,11 @@ def normalisasi_ke_pysqm(input_path, output_path):
         f.write("# UTC Date & Time, Local Date & Time, Temperature, Counts, Frequency, MSAS\n")
         f.write("# YYYY-MM-DDTHH:mm:ss.fff;YYYY-MM-DDTHH:mm:ss.fff;Celsius;number;Hz;mag/arcsec^2\n")
         f.write("# END OF HEADER\n")
-        
     df_final.to_csv(output_path, sep=';', index=False, header=False, mode='a')
 
 def normalisasi_lapan_ke_pysqm(input_path, output_path):
-    """Fungsi otomatis mengubah file LAPAN ke standar PySQM dengan pemetaan kolom MPSAS yang benar"""
     lon, lat = None, None
     data_lines = []
-    
     with open(input_path, 'r', encoding='utf-8', errors='ignore') as f:
         for line in f:
             if line.startswith('#'):
@@ -141,27 +129,17 @@ def normalisasi_lapan_ke_pysqm(input_path, output_path):
     timezone_offset = int(round(lon / 15.0)) if lon is not None else 7
     lat_val = lat if lat is not None else -6.8276 
     lon_val = lon if lon is not None else 107.6163
-
     data_str = '\n'.join(data_lines)
     columns_lapan = ['UTC_DateTime', 'Temp', 'MPSAS', 'Q']
     df = pd.read_csv(io.StringIO(data_str), sep=r'\s+', names=columns_lapan)
-
     df['UTC_Time'] = pd.to_datetime(df['UTC_DateTime'])
     df['Local_Time'] = df['UTC_Time'] + pd.Timedelta(hours=timezone_offset)
-
     df['Local_Str'] = df['Local_Time'].dt.strftime('%Y-%m-%dT%H:%M:%S.000')
     df['UTC_Str'] = df['UTC_Time'].dt.strftime('%Y-%m-%dT%H:%M:%S.000')
-
-    # Pemetaan diperbaiki: col6 diisi penuh oleh MPSAS untuk kurva yang mulus
     df_final = pd.DataFrame({
-        'col1': df['UTC_Str'],
-        'col2': df['Local_Str'],
-        'col3': df['Temp'],
-        'col4': df['Q'],         
-        'col5': 0.000,           
-        'col6': df['MPSAS']      
+        'col1': df['UTC_Str'], 'col2': df['Local_Str'], 'col3': df['Temp'],
+        'col4': df['Q'], 'col5': 0.000, 'col6': df['MPSAS']      
     })
-
     with open(output_path, 'w') as f:
         f.write("# Definition of the community standard for skyglow observations 1.0\n")
         f.write("# URL: http://www.darksky.org/NSBM/sdf1.0.pdf\n")
@@ -198,34 +176,25 @@ def normalisasi_lapan_ke_pysqm(input_path, output_path):
         f.write("# UTC Date & Time, Local Date & Time, Temperature, Counts, Frequency, MSAS\n")
         f.write("# YYYY-MM-DDTHH:mm:ss.fff;YYYY-MM-DDTHH:mm:ss.fff;Celsius;number;Hz;mag/arcsec^2\n")
         f.write("# END OF HEADER\n")
-
     df_final.to_csv(output_path, sep=';', index=False, header=False, mode='a')
 
 def proses_file_masuk(file_input):
-    """Pintu Masuk Cerdas (Smart Ingestion)"""
     file_ekstensi = os.path.splitext(file_input)[1].lower()
     file_standar_sementara = file_input + "_standardized.dat"
-    
     try:
         with open(file_input, 'r', encoding='utf-8', errors='ignore') as f:
             content_sample = f.read(2000)
     except:
         content_sample = ""
 
-    # 1. Deteksi Format Bosscha
     if 'Date/Time' in content_sample and ',' in content_sample:
         normalisasi_ke_pysqm(file_input, file_standar_sementara)
         file_aktif = file_standar_sementara
-        
-    # 2. Deteksi Format LAPAN (Mendukung .dat maupun .txt dengan header lon/lat atau kolom UTC_DateTime)
     elif 'UTC_DateTime' in content_sample or 'MPSAS' in content_sample or ('#' in content_sample and 'lon' in content_sample.lower()):
         normalisasi_lapan_ke_pysqm(file_input, file_standar_sementara)
         file_aktif = file_standar_sementara
-        
-    # 3. Format PySQM Standar
     else: 
         file_aktif = file_input
-        
     return file_aktif
 
 def get_city_from_coords(lat, lon):
@@ -403,14 +372,12 @@ def load_sqm_data(file_path):
     df["local_dt"] = pd.to_datetime(df["local"], errors="coerce")
     df = df.dropna(subset=["local_dt","mpsas"])
     
-    am = df[(df["local_dt"].dt.hour < 12) & (df["mpsas"] > 0)].copy()
-    
-    if not am.empty:
-        am["sun_alt"] = solar_alt(am["local_dt"], lat, lon, utc_offset)
-        am = am.sort_values("sun_alt").reset_index(drop=True)
+    # Ambil semua data pagi hari tanpa di-sort secara massal
+    am_all = df[(df["local_dt"].dt.hour < 12) & (df["mpsas"] > 0)].copy()
+    if not am_all.empty:
+        am_all["sun_alt"] = solar_alt(am_all["local_dt"], lat, lon, utc_offset)
         
-    date_str = am["local_dt"].iloc[0].strftime("%Y-%m-%d") if not am.empty else "Unknown"
-    return am, site, lat, lon, utc_offset, date_str, processed_path
+    return am_all, site, lat, lon, utc_offset, processed_path
 
 def apply_moonlight_correction(am, lat, lon, utc_offset):
     obs, moon = ephem.Observer(), ephem.Moon()
@@ -505,90 +472,109 @@ def analyze_sigmoid(am):
 def process_and_save_data(file_paths, method, df_existing):
     progress_bar = st.progress(0)
     status_text = st.empty()
+    
+    total_files = len(file_paths)
+    
     for idx, path in enumerate(file_paths):
-        status_text.text(f"Memproses {idx+1}/{len(file_paths)}: {os.path.basename(path)}")
+        status_text.text(f"Membaca File {idx+1}/{total_files}: {os.path.basename(path)}")
         try:
-            am, site, lat, lon, utc_offset, date_str, processed_path = load_sqm_data(path)
-            if am.empty: continue
+            am_all, site, lat, lon, utc_offset, processed_path = load_sqm_data(path)
+            if am_all.empty: continue
             
-            am, is_corrected = apply_moonlight_correction(am, lat, lon, utc_offset)
-            bin_deg, n_consec = get_dynamic_params(am)
-            if method == "SIGMAG-STAB": onset_alt, onset_msas = analyze_sigmag(am, bin_deg, n_consec)
-            else: onset_alt, onset_msas = analyze_sigmoid(am)
+            # 1. Ekstrak tanggal saja untuk grouping
+            am_all['date_only'] = am_all['local_dt'].dt.date
             
-            cloud_pct, df_win = analyze_cloud_cover(am, onset_alt, window_minutes=15)
-            sat_cloud_pct = get_satellite_cloud_cover(lat, lon, date_str) 
+            # 2. Kelompokkan data bulanan menjadi data harian
+            grouped_days = am_all.groupby('date_only')
+            total_days = len(grouped_days)
             
-            base_series = am[am["sun_alt"] < -20]["mpsas_corrected"]
-            baseline_mpsas = base_series.median() if not base_series.empty else am["mpsas_corrected"].max()
-            lp_category, expected_alt = categorize_light_pollution(baseline_mpsas)
-            
-            kota_akurat = get_city_from_coords(lat, lon)
-            if kota_akurat == "Unknown":
-                kota = re.split(r'[-,\|]', site)[-1].strip()
-            else:
-                kota = kota_akurat
-            
-            # PENGAMAN UKURAN PLOT MATPLOTLIB (Mencegah error overflow nilai triliunan piksel)
-            fig_width = max(6, min(15, len(am) / 50))
-            fig, ax = plt.subplots(figsize=(fig_width, 5))
-            
-            ax.plot(am["sun_alt"], am["mpsas_corrected"], color="#1A3C40", alpha=0.8, linewidth=1.5, label="SQM Terkoreksi")
-            if is_corrected: ax.plot(am["sun_alt"], am["mpsas"], color="#808080", alpha=0.4, linestyle=":", label="SQM Mentah")
-            if onset_alt is not None:
-                ax.axvline(onset_alt, color="#1D9A9C", linestyle="--", linewidth=2, label=f"Titik Belok ({onset_alt:.2f}°)")
-                ax.scatter([onset_alt], [onset_msas], color="#1D9A9C", s=60, zorder=5)
-            cloudy_points = df_win[df_win['is_cloudy'] == True] if 'is_cloudy' in df_win.columns else pd.DataFrame()
-            if not cloudy_points.empty: ax.scatter(cloudy_points["sun_alt"], cloudy_points["mpsas_corrected"], color="#d9534f", s=15, label="Indikasi Awan (SQM Ufuk)", zorder=4)
-            ax.invert_yaxis()
-            ax.set_xlim(-30, -5)
-            ax.set_xlabel("Ketinggian Matahari (Derajat)", fontweight='bold')
-            ax.set_ylabel("Kecerlangan Langit (Mpsas)", fontweight='bold')
-            ax.set_title(f"{site} | {date_str} [{method}]", color="#1A3C40", fontweight='bold')
-            ax.grid(True, linestyle=":", alpha=0.6)
-            
-            onset_str = f"{onset_alt:.2f}°" if onset_alt is not None else "Tidak Ditemukan"
-            sat_str = f"{sat_cloud_pct:.1f}%" if sat_cloud_pct is not None else "N/A"
-            
-            info_text = (f"Garis Dasar : {baseline_mpsas:.2f} Mpsas\n"
-                         f"Awan SQM(Ufuk)/Sat: {cloud_pct:.1f}% / {sat_str}\n"
-                         f"Fase Bulan  : {'Aktif' if is_corrected else 'Pasif'}\n"
-                         f"Fajar Sadiq : {onset_str}")
-            props = dict(boxstyle='round', facecolor='#F8F9FA', alpha=0.9, edgecolor='#1A3C40')
-            ax.text(0.02, baseline_mpsas - 1.2, info_text, transform=ax.get_yaxis_transform(), fontsize=9, verticalalignment='bottom', bbox=props, family='monospace')
-            ax.legend(loc="upper right")
-            
-            plot_url, raw_url = "", ""
-            if not df_existing.empty and {"Tanggal", "Lokasi", "Metode"}.issubset(df_existing.columns):
-                match = df_existing[(df_existing["Tanggal"].astype(str).str.strip() == str(date_str)) & (df_existing["Lokasi"].astype(str).str.strip() == str(site)) & (df_existing["Metode"].astype(str).str.strip() == str(method))]
-                if not match.empty:
-                    plot_url = str(match.iloc[0].get("Link_Grafik", "")).strip()
-                    raw_url = str(match.iloc[0].get("Link_DataMentah", "")).strip()
+            for day_idx, (current_date, am_day) in enumerate(grouped_days):
+                date_str = str(current_date)
+                status_text.text(f"Memproses File {idx+1}/{total_files} -> Hari {day_idx+1}/{total_days} ({date_str})")
+                
+                # Sort per hari berdasarkan ketinggian matahari (Sekarang aman!)
+                am = am_day.sort_values("sun_alt").reset_index(drop=True)
+                
+                # --- PROSES STANDAR ---
+                am, is_corrected = apply_moonlight_correction(am, lat, lon, utc_offset)
+                bin_deg, n_consec = get_dynamic_params(am)
+                if method == "SIGMAG-STAB": onset_alt, onset_msas = analyze_sigmag(am, bin_deg, n_consec)
+                else: onset_alt, onset_msas = analyze_sigmoid(am)
+                
+                cloud_pct, df_win = analyze_cloud_cover(am, onset_alt, window_minutes=15)
+                sat_cloud_pct = get_satellite_cloud_cover(lat, lon, date_str) 
+                
+                base_series = am[am["sun_alt"] < -20]["mpsas_corrected"]
+                baseline_mpsas = base_series.median() if not base_series.empty else am["mpsas_corrected"].max()
+                lp_category, expected_alt = categorize_light_pollution(baseline_mpsas)
+                
+                kota_akurat = get_city_from_coords(lat, lon)
+                if kota_akurat == "Unknown":
+                    kota = re.split(r'[-,\|]', site)[-1].strip()
+                else:
+                    kota = kota_akurat
+                
+                fig_width = max(6, min(15, len(am) / 50))
+                fig, ax = plt.subplots(figsize=(fig_width, 5))
+                
+                ax.plot(am["sun_alt"], am["mpsas_corrected"], color="#1A3C40", alpha=0.8, linewidth=1.5, label="SQM Terkoreksi")
+                if is_corrected: ax.plot(am["sun_alt"], am["mpsas"], color="#808080", alpha=0.4, linestyle=":", label="SQM Mentah")
+                if onset_alt is not None:
+                    ax.axvline(onset_alt, color="#1D9A9C", linestyle="--", linewidth=2, label=f"Titik Belok ({onset_alt:.2f}°)")
+                    ax.scatter([onset_alt], [onset_msas], color="#1D9A9C", s=60, zorder=5)
+                cloudy_points = df_win[df_win['is_cloudy'] == True] if 'is_cloudy' in df_win.columns else pd.DataFrame()
+                if not cloudy_points.empty: ax.scatter(cloudy_points["sun_alt"], cloudy_points["mpsas_corrected"], color="#d9534f", s=15, label="Indikasi Awan (SQM Ufuk)", zorder=4)
+                ax.invert_yaxis()
+                ax.set_xlim(-30, -5)
+                ax.set_xlabel("Ketinggian Matahari (Derajat)", fontweight='bold')
+                ax.set_ylabel("Kecerlangan Langit (Mpsas)", fontweight='bold')
+                ax.set_title(f"{site} | {date_str} [{method}]", color="#1A3C40", fontweight='bold')
+                ax.grid(True, linestyle=":", alpha=0.6)
+                
+                onset_str = f"{onset_alt:.2f}°" if onset_alt is not None else "Tidak Ditemukan"
+                sat_str = f"{sat_cloud_pct:.1f}%" if sat_cloud_pct is not None else "N/A"
+                
+                info_text = (f"Garis Dasar : {baseline_mpsas:.2f} Mpsas\n"
+                             f"Awan SQM(Ufuk)/Sat: {cloud_pct:.1f}% / {sat_str}\n"
+                             f"Fase Bulan  : {'Aktif' if is_corrected else 'Pasif'}\n"
+                             f"Fajar Sadiq : {onset_str}")
+                props = dict(boxstyle='round', facecolor='#F8F9FA', alpha=0.9, edgecolor='#1A3C40')
+                ax.text(0.02, baseline_mpsas - 1.2, info_text, transform=ax.get_yaxis_transform(), fontsize=9, verticalalignment='bottom', bbox=props, family='monospace')
+                ax.legend(loc="upper right")
+                
+                plot_url, raw_url = "", ""
+                if not df_existing.empty and {"Tanggal", "Lokasi", "Metode"}.issubset(df_existing.columns):
+                    match = df_existing[(df_existing["Tanggal"].astype(str).str.strip() == str(date_str)) & (df_existing["Lokasi"].astype(str).str.strip() == str(site)) & (df_existing["Metode"].astype(str).str.strip() == str(method))]
+                    if not match.empty:
+                        plot_url = str(match.iloc[0].get("Link_Grafik", "")).strip()
+                        raw_url = str(match.iloc[0].get("Link_DataMentah", "")).strip()
 
-            if plot_url and raw_url: 
-                status_text.text(f"Data duplikat terdeteksi: Menggunakan arsip lama...")
-            else:
-                status_text.text(f"Mengunggah arsip baru ke Cloudinary...")
-                plot_url = upload_plot_to_cloudinary(fig, f"Plot_{site}_{date_str}_{method}".replace(" ", "_"))
-                raw_url = upload_raw_to_cloudinary(processed_path, f"Raw_{site}_{date_str}_{method}.dat".replace(" ", "_"))
-            
-            save_to_google_sheets({
-                "Tanggal": date_str, "Kota": kota, "Lokasi": site, 
-                "Lintang": lat, "Bujur": lon, 
-                "Metode": method, "Bortle": lp_category.split("(")[-1].replace(")",""),
-                "Awan_%": round(cloud_pct, 1), 
-                "Awan_Satelit_%": sat_cloud_pct if sat_cloud_pct is not None else "",
-                "Koreksi_Bulan": "Aktif" if is_corrected else "Pasif",
-                "Garis_Dasar": round(baseline_mpsas, 2), "Fajar_Alt": round(onset_alt, 2) if onset_alt is not None else "",
-                "Fajar_MSAS": round(onset_msas, 2) if onset_msas is not None else "",
-                "Link_Grafik": plot_url, "Link_DataMentah": raw_url 
-            })
-            st.pyplot(fig)
-            plt.close(fig)
+                if plot_url and raw_url: 
+                    pass # Menghindari re-upload ke cloud agar hemat waktu
+                else:
+                    plot_url = upload_plot_to_cloudinary(fig, f"Plot_{site}_{date_str}_{method}".replace(" ", "_"))
+                    raw_url = upload_raw_to_cloudinary(processed_path, f"Raw_{site}_{date_str}_{method}.dat".replace(" ", "_"))
+                
+                save_to_google_sheets({
+                    "Tanggal": date_str, "Kota": kota, "Lokasi": site, 
+                    "Lintang": lat, "Bujur": lon, 
+                    "Metode": method, "Bortle": lp_category.split("(")[-1].replace(")",""),
+                    "Awan_%": round(cloud_pct, 1), 
+                    "Awan_Satelit_%": sat_cloud_pct if sat_cloud_pct is not None else "",
+                    "Koreksi_Bulan": "Aktif" if is_corrected else "Pasif",
+                    "Garis_Dasar": round(baseline_mpsas, 2), "Fajar_Alt": round(onset_alt, 2) if onset_alt is not None else "",
+                    "Fajar_MSAS": round(onset_msas, 2) if onset_msas is not None else "",
+                    "Link_Grafik": plot_url, "Link_DataMentah": raw_url 
+                })
+                
+                st.pyplot(fig)
+                plt.close(fig)
+                
         except Exception as e: st.error(f"Gagal memproses {os.path.basename(path)}: {str(e)}")
-        progress_bar.progress((idx + 1) / len(file_paths))
+        progress_bar.progress((idx + 1) / total_files)
+        
     status_text.text("")
-    st.success("🎉 Seluruh pengamatan dan kalibrasi ufuk timur berhasil diproses.")
+    st.success("🎉 Seluruh pengamatan berhasil diproses.")
 
 # =====================================================================
 # UI KONTROL & SIDEBAR
