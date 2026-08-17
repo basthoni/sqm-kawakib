@@ -768,6 +768,7 @@ with tab_statistik_utama:
                 )
 
         # --- SUB-TAB 3: KORELASI VARIABEL ---
+# --- SUB-TAB 3: KORELASI VARIABEL ---
         with sub_korelasi:
             st.subheader("📈 Analisis Korelasi Antar Variabel Astrometri")
             st.markdown("Visualisasi regresi untuk menguji hubungan sebab-akibat antara faktor lingkungan (Polusi Cahaya & Awan Ufuk Timur) terhadap pergeseran titik belok fajar.")
@@ -801,6 +802,16 @@ with tab_statistik_utama:
                     reg_cloud = scatter_cloud.transform_regression('Awan_%', 'Fajar_Alt').mark_line(color='#d9534f', strokeWidth=2)
                     st.altair_chart(scatter_cloud + reg_cloud, use_container_width=True)
 
+                st.markdown("<br>", unsafe_allow_html=True)
+                st.subheader("📋 Tabel Data & Tautan Grafik Sampel Korelasi")
+                st.dataframe(
+                    df_corr[['Tanggal', 'Kota', 'Lokasi', 'Garis_Dasar', 'Awan_%', 'Fajar_Alt', 'Link_Grafik', 'Link_DataMentah']],
+                    use_container_width=True,
+                    column_config={
+                        "Link_Grafik": st.column_config.LinkColumn("Link Grafik", display_text="🖼️ Lihat Grafik Plot"),
+                        "Link_DataMentah": st.column_config.LinkColumn("Link Data Mentah", display_text="📁 Buka File Mentah")
+                    }
+                )
         # --- SUB-TAB 4: PETA SPASIAL ---
         with sub_peta:
             st.subheader("🗺️ Peta Persebaran Stasiun Pengamatan")
