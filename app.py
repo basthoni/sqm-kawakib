@@ -152,7 +152,6 @@ def normalisasi_lapan_ke_pysqm(input_path, output_path):
     df['Local_Str'] = df['Local_Time'].dt.strftime('%Y-%m-%dT%H:%M:%S.000')
     df['UTC_Str'] = df['UTC_Time'].dt.strftime('%Y-%m-%dT%H:%M:%S.000')
 
-    # Pemetaan diperbaiki: col6 diisi penuh oleh MPSAS untuk kurva yang mulus
     df_final = pd.DataFrame({
         'col1': df['UTC_Str'],
         'col2': df['Local_Str'],
@@ -212,17 +211,12 @@ def proses_file_masuk(file_input):
     except:
         content_sample = ""
 
-    # 1. Deteksi Format Bosscha
     if 'Date/Time' in content_sample and ',' in content_sample:
         normalisasi_ke_pysqm(file_input, file_standar_sementara)
         file_aktif = file_standar_sementara
-        
-    # 2. Deteksi Format LAPAN (Mendukung .dat maupun .txt dengan header lon/lat atau kolom UTC_DateTime)
     elif 'UTC_DateTime' in content_sample or 'MPSAS' in content_sample or ('#' in content_sample and 'lon' in content_sample.lower()):
         normalisasi_lapan_ke_pysqm(file_input, file_standar_sementara)
         file_aktif = file_standar_sementara
-        
-    # 3. Format PySQM Standar
     else: 
         file_aktif = file_input
         
@@ -794,7 +788,6 @@ with tab_statistik_utama:
                 
                 with col_k1:
                     st.markdown("**1. Korelasi Polusi Cahaya vs Titik Belok Fajar**")
-                    # Ganti mark_circle ke mark_point agar tooltip tidak tertimpa/menghasilkan tabel ganda di Altair
                     scatter_lp = alt.Chart(df_corr).mark_point(size=60, color='#1D9A9C', filled=True).encode(
                         x=alt.X('Garis_Dasar:Q', title='Garis Dasar Kecerlangan (Mpsas)', scale=alt.Scale(zero=False)),
                         y=alt.Y('Fajar_Alt:Q', title='Titik Belok Fajar (°)', scale=alt.Scale(domain=[-22, -12])),
@@ -826,11 +819,11 @@ with tab_statistik_utama:
                     column_config={
                         "Link_Grafik": st.column_config.LinkColumn(
                             "Link_Grafik", 
-                            display_text="🖼️ Buka Grafik"
+                            display_text="🖼️ Buka Grafik Plot"
                         ),
                         "Link_DataMentah": st.column_config.LinkColumn(
                             "Link_DataMentah", 
-                            display_text="📁 Unduh Data"
+                            display_text="📁 Buka File Mentah"
                         )
                     }
                 )
