@@ -471,13 +471,11 @@ with tab_histori:
     df_cloud = load_data_from_google_sheets()
     if df_cloud.empty: st.info("Basis data kosong.")
     else:
-        # Deteksi pintar nama kolom link di database utama
         col_g = "Link_Grafik" if "Link_Grafik" in df_cloud.columns else ("Link Grafik" if "Link Grafik" in df_cloud.columns else None)
         col_d = "Link_DataMentah" if "Link_DataMentah" in df_cloud.columns else ("Link Data Mentah" if "Link Data Mentah" in df_cloud.columns else None)
         cfg_db = {}
         if col_g: cfg_db[col_g] = st.column_config.LinkColumn("Plot Fajar", display_text="🖼️ Lihat Grafik Plot")
         if col_d: cfg_db[col_d] = st.column_config.LinkColumn("Data Mentah", display_text="📁 Buka File Mentah")
-        
         st.dataframe(df_cloud, use_container_width=True, column_config=cfg_db)
 
 with tab_statistik_utama:
@@ -489,7 +487,7 @@ with tab_statistik_utama:
     df_stat = load_data_from_google_sheets()
     
     if not df_stat.empty:
-        # Konversi tipe data numerik dengan paksa (ganti teks aneh dengan NaN)
+        # PENGAMANAN TIPE DATA NUMERIK SECARA EKSTREM
         for col in ['Fajar_Alt', 'Awan_%', 'Garis_Dasar', 'Lintang', 'Bujur']:
             if col in df_stat.columns:
                 df_stat[col] = pd.to_numeric(df_stat[col], errors='coerce')
@@ -497,13 +495,9 @@ with tab_statistik_utama:
         if 'Kota' not in df_stat.columns and 'Lokasi' in df_stat.columns:
             df_stat['Kota'] = df_stat['Lokasi'].apply(lambda x: re.split(r'[-,\|]', str(x))[-1].strip())
             
-        # =====================================================================
-        # KEMBALIKAN LAYOUT CANTIK SUB-TAB IDEAL KEMENAG
-        # =====================================================================
         with sub_ideal:
             st.subheader("🌟 Analisis Data Ideal (Standar Kemenag)")
             df_kemenag_ideal = df_stat[(df_stat['Garis_Dasar'] >= 20.5) & (df_stat['Awan_%'] <= 5.0) & (df_stat['Koreksi_Bulan'] == 'Pasif')]
-            
             rata_rata_kemenag = df_kemenag_ideal['Fajar_Alt'].mean() if not df_kemenag_ideal.empty else 0.0
             
             c1, c2, c3 = st.columns(3)
@@ -523,10 +517,6 @@ with tab_statistik_utama:
             fc3.success(f"**-19.0° s/d -18.5°:** \n### {len(df_fajar3)} Data ({df_fajar3['Fajar_Alt'].mean():.2f}°)" if not df_fajar3.empty else "**-19.0° s/d -18.5°:** \n### 0 Data (-)")
             fc4.success(f"**Lebih dangkal dari -18.5°:** \n### {len(df_fajar4)} Data ({df_fajar4['Fajar_Alt'].mean():.2f}°)" if not df_fajar4.empty else "**> -18.5°:** \n### 0 Data (-)")
 
-
-        # =====================================================================
-        # KEMBALIKAN LAYOUT CANTIK SUB-TAB ANOMALI
-        # =====================================================================
         with sub_anomali:
             st.subheader("⚠️ Analisis Data Anomali & Tabel Pemeriksaan Kasus")
             df_anomali = df_stat[~((df_stat['Garis_Dasar'] >= 20.5) & (df_stat['Awan_%'] <= 5.0) & (df_stat['Koreksi_Bulan'] == 'Pasif'))].dropna(subset=['Fajar_Alt'])
@@ -561,22 +551,18 @@ with tab_statistik_utama:
 
                 st.divider()
                 st.subheader("🔍 Tabel Rincian Data Berdasarkan Kelompok Anomali")
-                pilihan_kelompok = st.selectbox(
-                    "Pilih Kelompok Anomali untuk Diperiksa:",
-                    [
-                        f"Kelompok 1: Kedalaman < -18.5° ({len(df_a1)} Data)",
-                        f"Kelompok 2: Kedalaman -18.5° s/d -18.0° ({len(df_a2)} Data)",
-                        f"Kelompok 3: Kedalaman -18.0° s/d -17.5° ({len(df_a3)} Data)",
-                        f"Kelompok 4: Kedalaman > -17.5° ({len(df_a4)} Data)"
-                    ]
-                )
+                pilihan_kelompok = st.selectbox("Pilih Kelompok Anomali untuk Diperiksa:", [
+                    f"Kelompok 1: Kedalaman < -18.5° ({len(df_a1)} Data)",
+                    f"Kelompok 2: Kedalaman -18.5° s/d -18.0° ({len(df_a2)} Data)",
+                    f"Kelompok 3: Kedalaman -18.0° s/d -17.5° ({len(df_a3)} Data)",
+                    f"Kelompok 4: Kedalaman > -17.5° ({len(df_a4)} Data)"
+                ])
                 
                 if "Kelompok 1" in pilihan_kelompok: df_tampil = df_a1
                 elif "Kelompok 2" in pilihan_kelompok: df_tampil = df_a2
                 elif "Kelompok 3" in pilihan_kelompok: df_tampil = df_a3
                 else: df_tampil = df_a4
                 
-                # Deteksi pintar nama kolom link di database untuk tabel anomali
                 link_g_anom = "Link_Grafik" if "Link_Grafik" in df_tampil.columns else ("Link Grafik" if "Link Grafik" in df_tampil.columns else None)
                 link_d_anom = "Link_DataMentah" if "Link_DataMentah" in df_tampil.columns else ("Link Data Mentah" if "Link Data Mentah" in df_tampil.columns else None)
                 
@@ -589,15 +575,8 @@ with tab_statistik_utama:
                     cols_to_show_anom.append(link_d_anom)
                     cfg_anom[link_d_anom] = st.column_config.LinkColumn("Data Mentah", display_text="📁 Buka File Mentah")
 
-                st.dataframe(
-                    df_tampil[cols_to_show_anom], 
-                    use_container_width=True,
-                    column_config=cfg_anom
-                )
+                st.dataframe(df_tampil[cols_to_show_anom], use_container_width=True, column_config=cfg_anom)
 
-        # =====================================================================
-        # BAGIAN KORELASI YANG SUDAH AMAN
-        # =====================================================================
         with sub_korelasi:
             st.subheader("📈 Analisis Korelasi Antar Variabel Astrometri")
             st.markdown("Visualisasi regresi untuk menguji hubungan sebab-akibat antara faktor lingkungan (Polusi Cahaya & Awan Ufuk Timur) terhadap pergeseran titik belok fajar.")
@@ -605,51 +584,65 @@ with tab_statistik_utama:
             df_corr = df_stat.dropna(subset=['Garis_Dasar', 'Fajar_Alt', 'Awan_%']).copy()
             
             if df_corr.empty:
-                st.warning("⚠️ Data belum mencukupi untuk diregresi atau beberapa kolom tidak terbaca sebagai angka bulat.")
+                st.warning("⚠️ Data belum mencukupi untuk diregresi atau beberapa kolom tidak terbaca sebagai angka.")
             else:
+                df_chart = df_corr[['Kota', 'Tanggal', 'Garis_Dasar', 'Fajar_Alt', 'Awan_%']].copy()
+                
                 col_k1, col_k2 = st.columns(2)
                 
                 with col_k1:
                     st.markdown("**1. Korelasi Polusi Cahaya vs Titik Belok Fajar**")
-                    scatter_lp = alt.Chart(df_corr).mark_circle(size=70, color='#1D9A9C').encode(
+                    scatter_lp = alt.Chart(df_chart).mark_circle(size=70, color='#1D9A9C').encode(
                         x=alt.X('Garis_Dasar:Q', title='Garis Dasar Kecerlangan (Mpsas)', scale=alt.Scale(zero=False)),
-                        y=alt.Y('Fajar_Alt:Q', title='Titik Belok Fajar (°)', scale=alt.Scale(domain=[-22, -12])),
+                        y=alt.Y('Fajar_Alt:Q', title='Titik Belok Fajar (°)', scale=alt.Scale(zero=False)),
                         tooltip=['Kota', 'Tanggal', 'Garis_Dasar', 'Fajar_Alt']
                     ).properties(height=320)
-                    reg_lp = scatter_lp.transform_regression('Garis_Dasar', 'Fajar_Alt').mark_line(color='#d9534f', strokeWidth=2)
-                    st.altair_chart(scatter_lp + reg_lp, use_container_width=True)
+                    
+                    chart_lp = scatter_lp
+                    if len(df_chart) > 1 and df_chart['Garis_Dasar'].nunique() > 1:
+                        try:
+                            reg_lp = scatter_lp.transform_regression('Garis_Dasar', 'Fajar_Alt').mark_line(color='#d9534f', strokeWidth=2)
+                            chart_lp = scatter_lp + reg_lp
+                        except: pass
+                    st.altair_chart(chart_lp, use_container_width=True)
 
                 with col_k2:
                     st.markdown("**2. Korelasi Gangguan Awan Ufuk vs Titik Belok Fajar**")
-                    scatter_cloud = alt.Chart(df_corr).mark_circle(size=70, color='#4A90E2').encode(
+                    scatter_cloud = alt.Chart(df_chart).mark_circle(size=70, color='#4A90E2').encode(
                         x=alt.X('Awan_%:Q', title='Persentase Awan SQM Ufuk (%)', scale=alt.Scale(domain=[0, 100])),
-                        y=alt.Y('Fajar_Alt:Q', title='Titik Belok Fajar (°)', scale=alt.Scale(domain=[-22, -12])),
+                        y=alt.Y('Fajar_Alt:Q', title='Titik Belok Fajar (°)', scale=alt.Scale(zero=False)),
                         tooltip=['Kota', 'Tanggal', 'Awan_%', 'Fajar_Alt']
                     ).properties(height=320)
-                    reg_cloud = scatter_cloud.transform_regression('Awan_%', 'Fajar_Alt').mark_line(color='#d9534f', strokeWidth=2)
-                    st.altair_chart(scatter_cloud + reg_cloud, use_container_width=True)
+                    
+                    chart_cloud = scatter_cloud
+                    if len(df_chart) > 1 and df_chart['Awan_%'].nunique() > 1:
+                        try:
+                            reg_cloud = scatter_cloud.transform_regression('Awan_%', 'Fajar_Alt').mark_line(color='#d9534f', strokeWidth=2)
+                            chart_cloud = scatter_cloud + reg_cloud
+                        except: pass
+                    st.altair_chart(chart_cloud, use_container_width=True)
                 
-                st.divider()
-                st.subheader("📋 Tabel Data Korelasi (Dengan Tautan Interaktif)")
-                
-                link_g_name = "Link_Grafik" if "Link_Grafik" in df_corr.columns else ("Link Grafik" if "Link Grafik" in df_corr.columns else None)
-                link_d_name = "Link_DataMentah" if "Link_DataMentah" in df_corr.columns else ("Link Data Mentah" if "Link Data Mentah" in df_corr.columns else None)
-                
-                kolom_penting = ['Tanggal', 'Kota', 'Lokasi', 'Garis_Dasar', 'Awan_%', 'Fajar_Alt']
-                cfg_korelasi = {}
-                if link_g_name: 
-                    kolom_penting.append(link_g_name)
-                    cfg_korelasi[link_g_name] = st.column_config.LinkColumn("Plot Fajar", display_text="🖼️ Lihat Grafik Plot")
-                if link_d_name: 
-                    kolom_penting.append(link_d_name)
-                    cfg_korelasi[link_d_name] = st.column_config.LinkColumn("Data Mentah", display_text="📁 Buka File Mentah")
+                with st.expander("📂 Buka Tabel Interaktif Korelasi (Untuk Unduh Data Mentah & Plot Grafik)"):
+                    st.info("💡 **Catatan:** Tombol *View Data/Show Data* bawaan grafik di atas hanya merender teks mentah. Gunakan tabel khusus di bawah ini untuk membuka atau mengunduh plot dan file datanya secara interaktif.")
+                    
+                    link_g_name = "Link_Grafik" if "Link_Grafik" in df_corr.columns else ("Link Grafik" if "Link Grafik" in df_corr.columns else None)
+                    link_d_name = "Link_DataMentah" if "Link_DataMentah" in df_corr.columns else ("Link Data Mentah" if "Link Data Mentah" in df_corr.columns else None)
+                    
+                    kolom_penting = ['Tanggal', 'Kota', 'Lokasi', 'Garis_Dasar', 'Awan_%', 'Fajar_Alt']
+                    cfg_korelasi = {}
+                    if link_g_name: 
+                        kolom_penting.append(link_g_name)
+                        cfg_korelasi[link_g_name] = st.column_config.LinkColumn("Plot Fajar", display_text="🖼️ Lihat Grafik Plot")
+                    if link_d_name: 
+                        kolom_penting.append(link_d_name)
+                        cfg_korelasi[link_d_name] = st.column_config.LinkColumn("Data Mentah", display_text="📁 Buka File Mentah")
 
-                st.dataframe(
-                    df_corr[kolom_penting],
-                    use_container_width=True,
-                    hide_index=True,
-                    column_config=cfg_korelasi
-                )
+                    st.dataframe(
+                        df_corr[kolom_penting],
+                        use_container_width=True,
+                        hide_index=True,
+                        column_config=cfg_korelasi
+                    )
 
         with sub_peta:
             st.subheader("🗺️ Peta Persebaran Stasiun Pengamatan")
@@ -664,8 +657,8 @@ with tab_algoritma:
     st.markdown(r"""
     Aplikasi ini dibangun sebagai instrumen riset falakiyah analitis yang menggabungkan astrometri klasik, pemrosesan sinyal digital (*Digital Signal Processing*), dan validasi orientasi ufuk timur.
 
-    ### 1. Ekstraksi Fajar: Metode SIGMAG-STAB & Filter Ufuk Timur
-    *Smoothed Gradient - Median Absolute Deviation Stability* (SIGMAG-STAB) dipadukan dengan pembacaan sensor SQM yang terarah presisi menghadap langsung ke ufuk timur tempat fajar menyingsing.
+    ### 1. Ekstraksi Fajar: Metode SIGMAG-STAB & SIGMOID
+    *Smoothed Gradient - Median Absolute Deviation Stability* (SIGMAG-STAB) dan *Sigmoid Curve Fitting* dipadukan dengan pembacaan sensor SQM yang terarah presisi menghadap langsung ke ufuk timur tempat fajar menyingsing.
 
     **A. Penghalusan Derau (Savitzky-Golay Filter)**
     Data mentah dihaluskan menggunakan konvolusi polinomial untuk membuang *noise* frekuensi tinggi tanpa merusak bentuk asli transisi fajar:
