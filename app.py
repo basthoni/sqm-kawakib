@@ -375,6 +375,26 @@ def process_and_save_data(file_paths, method, df_existing):
         try:
             am, site, lat, lon, utc_offset, date_str, processed_path = load_sqm_data(path)
             if am.empty: continue
+            
+            # --- PERBAIKAN PENAMAAN LAPAN (DETEKSI OSM & NAMA FILE) ---
+            kota = get_city_from_coords(lat, lon)
+            if "UNKNOWN" in site.upper() or "LAPAN" in site.upper() or site.strip() == "":
+                if kota != "Unknown":
+                    site = f"Stasiun LAPAN {kota}"
+                else:
+                    # Fallback lacak dari nama file (jika OSM limit/offline)
+                    fname = os.path.basename(path).upper()
+                    if "BIAK" in fname: site = "Stasiun LAPAN Biak"
+                    elif "PONTIANAK" in fname: site = "Stasiun LAPAN Pontianak"
+                    elif "SUMEDANG" in fname or "TANJUNGSARI" in fname: site = "Stasiun LAPAN Sumedang"
+                    elif "GARUT" in fname: site = "Stasiun LAPAN Garut"
+                    elif "PASURUAN" in fname or "WATUKOSEK" in fname: site = "Stasiun LAPAN Watukosek"
+                    elif "KUPANG" in fname: site = "Stasiun LAPAN Kupang"
+                    elif "AGAM" in fname or "KOTO" in fname: site = "Stasiun LAPAN Kototabang"
+                    else: site = "Stasiun LAPAN"
+            if kota == "Unknown": kota = re.split(r'[-,\|]', site)[-1].strip()
+            # ----------------------------------------------------------
+
             am, is_corrected = apply_moonlight_correction(am, lat, lon, utc_offset)
             bin_deg, n_consec = get_dynamic_params(am)
             if method == "SIGMAG-STAB": onset_alt, onset_msas = analyze_sigmag(am, bin_deg, n_consec)
@@ -385,8 +405,6 @@ def process_and_save_data(file_paths, method, df_existing):
             base_series = am[am["sun_alt"] < -20]["mpsas_corrected"]
             baseline_mpsas = base_series.median() if not base_series.empty else am["mpsas_corrected"].max()
             lp_category, expected_alt = categorize_light_pollution(baseline_mpsas)
-            kota = get_city_from_coords(lat, lon)
-            if kota == "Unknown": kota = re.split(r'[-,\|]', site)[-1].strip()
             
             fig_width = max(6, min(15, len(am) / 50))
             fig, ax = plt.subplots(figsize=(fig_width, 5))
