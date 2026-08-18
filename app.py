@@ -539,10 +539,44 @@ with tab_statistik_utama:
             df_fajar4 = df_kemenag_ideal[df_kemenag_ideal['Fajar_Alt'] > -18.5]
             
             fc1, fc2, fc3, fc4 = st.columns(4)
-            fc1.success(f"**Lebih dalam dari -19.5°:** \n### {len(df_fajar1)} Data ({df_fajar1['Fajar_Alt'].mean():.2f}°)" if not df_fajar1.empty else "**< -19.5°:** \n### 0 Data (-)")
+            fc1.success(f"**Lebih dalam dari -19.5°:** \n### {len(df_fajar1)} Data ({df_fajar1['Fajar_Alt'].mean():.2f}°)" if not df_fajar1.empty else "**<= -19.5°:** \n### 0 Data (-)")
             fc2.success(f"**-19.5° s/d -19.0°:** \n### {len(df_fajar2)} Data ({df_fajar2['Fajar_Alt'].mean():.2f}°)" if not df_fajar2.empty else "**-19.5° s/d -19.0°:** \n### 0 Data (-)")
             fc3.success(f"**-19.0° s/d -18.5°:** \n### {len(df_fajar3)} Data ({df_fajar3['Fajar_Alt'].mean():.2f}°)" if not df_fajar3.empty else "**-19.0° s/d -18.5°:** \n### 0 Data (-)")
             fc4.success(f"**Lebih dangkal dari -18.5°:** \n### {len(df_fajar4)} Data ({df_fajar4['Fajar_Alt'].mean():.2f}°)" if not df_fajar4.empty else "**> -18.5°:** \n### 0 Data (-)")
+
+            # FITUR BARU: Tabel Dropdown Interaktif untuk Data Ideal
+            st.divider()
+            st.subheader("🔍 Tabel Rincian Data Berdasarkan Kelompok Ideal")
+            
+            if not df_kemenag_ideal.empty:
+                pilihan_kelompok_ideal = st.selectbox("Pilih Kelompok Ideal untuk Diperiksa:", [
+                    f"Kelompok 1: Kedalaman <= -19.5° ({len(df_fajar1)} Data)",
+                    f"Kelompok 2: Kedalaman -19.5° s/d -19.0° ({len(df_fajar2)} Data)",
+                    f"Kelompok 3: Kedalaman -19.0° s/d -18.5° ({len(df_fajar3)} Data)",
+                    f"Kelompok 4: Kedalaman > -18.5° ({len(df_fajar4)} Data)"
+                ])
+                
+                if "Kelompok 1" in pilihan_kelompok_ideal: df_tampil_ideal = df_fajar1
+                elif "Kelompok 2" in pilihan_kelompok_ideal: df_tampil_ideal = df_fajar2
+                elif "Kelompok 3" in pilihan_kelompok_ideal: df_tampil_ideal = df_fajar3
+                else: df_tampil_ideal = df_fajar4
+                
+                if not df_tampil_ideal.empty:
+                    link_g_ideal = "Link_Grafik" if "Link_Grafik" in df_tampil_ideal.columns else ("Link Grafik" if "Link Grafik" in df_tampil_ideal.columns else None)
+                    link_d_ideal = "Link_DataMentah" if "Link_DataMentah" in df_tampil_ideal.columns else ("Link Data Mentah" if "Link Data Mentah" in df_tampil_ideal.columns else None)
+                    
+                    cols_to_show_ideal = ['Tanggal', 'Kota', 'Lokasi', 'Metode', 'Garis_Dasar', 'Awan_%', 'Fajar_Alt']
+                    cfg_ideal = {}
+                    if link_g_ideal:
+                        cols_to_show_ideal.append(link_g_ideal)
+                        cfg_ideal[link_g_ideal] = st.column_config.LinkColumn("Plot Fajar", display_text="🖼️ Lihat Grafik Plot")
+                    if link_d_ideal:
+                        cols_to_show_ideal.append(link_d_ideal)
+                        cfg_ideal[link_d_ideal] = st.column_config.LinkColumn("Data Mentah", display_text="📁 Buka File Mentah")
+
+                    st.dataframe(df_tampil_ideal[cols_to_show_ideal], use_container_width=True, column_config=cfg_ideal)
+                else:
+                    st.info("Tidak ada data pengamatan di kelompok ini.")
 
         with sub_anomali:
             st.subheader("⚠️ Analisis Data Anomali & Tabel Pemeriksaan Kasus")
@@ -579,7 +613,7 @@ with tab_statistik_utama:
                 st.divider()
                 st.subheader("🔍 Tabel Rincian Data Berdasarkan Kelompok Anomali")
                 pilihan_kelompok = st.selectbox("Pilih Kelompok Anomali untuk Diperiksa:", [
-                    f"Kelompok 1: Kedalaman < -18.5° ({len(df_a1)} Data)",
+                    f"Kelompok 1: Kedalaman <= -18.5° ({len(df_a1)} Data)",
                     f"Kelompok 2: Kedalaman -18.5° s/d -18.0° ({len(df_a2)} Data)",
                     f"Kelompok 3: Kedalaman -18.0° s/d -17.5° ({len(df_a3)} Data)",
                     f"Kelompok 4: Kedalaman > -17.5° ({len(df_a4)} Data)"
@@ -590,19 +624,22 @@ with tab_statistik_utama:
                 elif "Kelompok 3" in pilihan_kelompok: df_tampil = df_a3
                 else: df_tampil = df_a4
                 
-                link_g_anom = "Link_Grafik" if "Link_Grafik" in df_tampil.columns else ("Link Grafik" if "Link Grafik" in df_tampil.columns else None)
-                link_d_anom = "Link_DataMentah" if "Link_DataMentah" in df_tampil.columns else ("Link Data Mentah" if "Link Data Mentah" in df_tampil.columns else None)
-                
-                cols_to_show_anom = ['Tanggal', 'Kota', 'Lokasi', 'Metode', 'Garis_Dasar', 'Awan_%', 'Koreksi_Bulan', 'Fajar_Alt']
-                cfg_anom = {}
-                if link_g_anom:
-                    cols_to_show_anom.append(link_g_anom)
-                    cfg_anom[link_g_anom] = st.column_config.LinkColumn("Plot Fajar", display_text="🖼️ Lihat Grafik Plot")
-                if link_d_anom:
-                    cols_to_show_anom.append(link_d_anom)
-                    cfg_anom[link_d_anom] = st.column_config.LinkColumn("Data Mentah", display_text="📁 Buka File Mentah")
+                if not df_tampil.empty:
+                    link_g_anom = "Link_Grafik" if "Link_Grafik" in df_tampil.columns else ("Link Grafik" if "Link Grafik" in df_tampil.columns else None)
+                    link_d_anom = "Link_DataMentah" if "Link_DataMentah" in df_tampil.columns else ("Link Data Mentah" if "Link Data Mentah" in df_tampil.columns else None)
+                    
+                    cols_to_show_anom = ['Tanggal', 'Kota', 'Lokasi', 'Metode', 'Garis_Dasar', 'Awan_%', 'Koreksi_Bulan', 'Fajar_Alt']
+                    cfg_anom = {}
+                    if link_g_anom:
+                        cols_to_show_anom.append(link_g_anom)
+                        cfg_anom[link_g_anom] = st.column_config.LinkColumn("Plot Fajar", display_text="🖼️ Lihat Grafik Plot")
+                    if link_d_anom:
+                        cols_to_show_anom.append(link_d_anom)
+                        cfg_anom[link_d_anom] = st.column_config.LinkColumn("Data Mentah", display_text="📁 Buka File Mentah")
 
-                st.dataframe(df_tampil[cols_to_show_anom], use_container_width=True, column_config=cfg_anom)
+                    st.dataframe(df_tampil[cols_to_show_anom], use_container_width=True, column_config=cfg_anom)
+                else:
+                    st.info("Tidak ada data pengamatan di kelompok ini.")
 
         with sub_korelasi:
             st.subheader("📈 Analisis Korelasi Antar Variabel Astrometri")
